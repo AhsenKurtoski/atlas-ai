@@ -49,7 +49,7 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ---
 
-## 🧪 Test (141)
+## 🧪 Test (146)
 
 ```bash
 pytest -q                     # tutti
@@ -57,7 +57,7 @@ pytest tests/test_endpoints.py -v
 pytest --cov=app --cov-report=html
 ```
 
-Stato attuale: **141 passed / 0 failed** (inclusi 15 test con Chromium reale).
+Stato attuale: **146 passed / 0 failed** (18 test con Chromium reale + 2 del loop Gemini con client finto).
 
 | Suite | Copre |
 |---|---|
@@ -72,7 +72,8 @@ Stato attuale: **141 passed / 0 failed** (inclusi 15 test con Chromium reale).
 | `test_scheduler_lock.py` | lock inter-processo dello scheduler |
 | `test_weather.py` | variabili Open-Meteo corrette, parsing meteo e previsioni |
 | `test_chat_image.py` | foto in chat: PNG valido, MIME/base64/dimensioni non validi |
-| `test_browser.py` | Chromium headless reale: apertura, testo, click, form, select, scroll, back, sessioni per profilo, SSRF |
+| `test_browser.py` | Chromium headless reale: apertura, testo, click, form, select, scroll, back, sessioni per profilo, DNS su XHR/iframe/immagini, SSRF |
+| `test_ai_loop.py` | loop di function calling Gemini con client finto: tool multipli, function-response, limite turni |
 
 ---
 
@@ -118,16 +119,22 @@ Come funziona:
 - la sessione scade dopo `BROWSER_SESSION_TTL` (default 900 s) o con `browser_chiudi`;
 - il testo restituito al modello è limitato a ~3,8 KB per non saturare il contesto;
 - il numero di turni di tool per risposta è `AGENT_MAX_TOOL_TURNS` (default 10), così
-  l'agente può fare più passi (apri → leggi → clicca → rileggi).
+  l'agente può fare più passi (apri → leggi → clicca → rileggi);
+- **ogni richiesta** (navigazione, redirect, XHR, iframe, immagini, CSS, font) passa da
+  un controllo DNS con cache: se un dominio risolve a un IP non pubblico viene bloccata.
+  I service worker sono disabilitati per non aggirare il route guard.
 
 Variabili: `BROWSER_ENABLED`, `BROWSER_HEADLESS`, `BROWSER_SESSION_TTL`,
-`BROWSER_NAV_TIMEOUT_MS`, `BROWSER_ACTION_TIMEOUT_MS`, `BROWSER_NO_SANDBOX` (solo
-container isolati), `AGENT_MAX_TOOL_TURNS`. Dettagli e limiti in [`docs/BROWSER.md`](../docs/BROWSER.md).
+`BROWSER_DNS_CACHE_TTL`, `BROWSER_NAV_TIMEOUT_MS`, `BROWSER_ACTION_TIMEOUT_MS`,
+`BROWSER_NO_SANDBOX` (solo container isolati), `AGENT_MAX_TOOL_TURNS`. Dettagli e limiti
+in [`docs/BROWSER.md`](../docs/BROWSER.md); guida pratica in
+[`docs/TESTING_GUIDE.md`](../docs/TESTING_GUIDE.md).
 
-**Sicurezza**: ogni navigazione passa da `validate_url` (blocco IP privati/loopback e
-`file://`); il routing del browser blocca anche redirect, iframe e XHR verso host privati.
-Il testo delle pagine è dato non attendibile e il system prompt vieta di eseguire
-istruzioni contenute nelle pagine o inserire credenziali/pagamenti senza conferma.
+**Sicurezza**: ogni richiesta HTTP(S) passa da `_request_allowed` (schema, host e DNS con
+cache); il routing blocca navigazioni, redirect, iframe, immagini, CSS, font e XHR verso
+host privati, loopback o domini che risolvono a IP non pubblici. La risoluzione fallita
+è fail-closed. Il testo delle pagine è dato non attendibile e il system prompt vieta di
+eseguire istruzioni contenute nelle pagine o inserire credenziali/pagamenti senza conferma.
 
 ## 🔐 Autenticazione
 
@@ -316,5 +323,6 @@ Note:
 
 I tool `mcp_web_fetch_markdown`, `mcp_web_fetch_json`, la lettura pagine e i tool
 `browser_*` bloccano URL con IP privati, loopback, link-local (metadata cloud) e
-credenziali incorporate; il browser controlla anche redirect, iframe e richieste XHR.
+credenziali incorporate; il browser applica il controllo DNS a **ogni** richiesta
+(navigazioni, redirect, iframe, immagini, CSS, font e XHR).
 `ALLOW_PRIVATE_FETCH=true` disattiva il blocco per self-hosting particolari.

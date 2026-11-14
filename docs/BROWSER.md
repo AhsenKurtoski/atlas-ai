@@ -25,7 +25,8 @@ POST /chat (FastAPI, async)
    │             └─ Playwright sync API + Chromium headless
    │                   ├─ BrowserContext per profilo
    │                   ├─ page, cookie, history isolati
-   │                   └─ route guard SSRF su ogni richiesta
+   │                   └─ route guard SSRF/DNS su OGNI richiesta
+   │                      (navigazioni, redirect, XHR, iframe, immagini, CSS, font)
    │
    └─ risposta finale + salvataggio in memoria
 ```
@@ -87,6 +88,7 @@ un'alternativa.
 | `BROWSER_ENABLED` | `true` | `false` disattiva tutti i tool browser |
 | `BROWSER_HEADLESS` | `true` | `false` apre una finestra (solo debug locale) |
 | `BROWSER_SESSION_TTL` | `900` | Secondi di inattività prima della chiusura |
+| `BROWSER_DNS_CACHE_TTL` | `60` | Cache delle risoluzioni DNS del route guard |
 | `BROWSER_NAV_TIMEOUT_MS` | `25000` | Timeout navigazione |
 | `BROWSER_ACTION_TIMEOUT_MS` | `8000` | Timeout click/fill/select |
 | `BROWSER_NO_SANDBOX` | `false` | Solo container isolati che lo richiedono |
@@ -107,10 +109,15 @@ python -m playwright install --with-deps chromium
 
 ## Sicurezza
 
-1. **SSRF**: ogni URL passa da `app.core.net_guard.validate_url` (solo HTTP/HTTPS,
-   niente credenziali incorporate, blocco di loopback, reti private, link-local e
-   metadata cloud). Il routing del browser blocca le stesse destinazioni anche per
-   redirect, iframe e richieste XHR; l'URL finale dopo la navigazione viene rivalidato.
+1. **SSRF e DNS**: ogni URL passa da `_request_allowed` (solo HTTP/HTTPS/WS, niente
+   credenziali incorporate, blocco di loopback, reti private, link-local e metadata
+   cloud). Il routing del browser applica la stessa validazione a **tutte** le
+   richieste: navigazioni, redirect, iframe, immagini, CSS, font e XHR. Il DNS viene
+   risolto con cache (`BROWSER_DNS_CACHE_TTL`, default 60 s) e la risoluzione fallita
+   è **fail-closed**; i service worker sono disabilitati per non aggirare il guard.
+   L'URL finale dopo ogni navigazione viene rivalidato. Resta una finestra teorica di
+   DNS rebinding tra due risoluzioni: per isolamento forte usare un proxy egress con
+   IP pinnati o una rete dedicata.
 2. **Prompt injection**: il testo delle pagine è trattato come dato non attendibile.
    Il system prompt vieta di seguire istruzioni contenute nelle pagine, rivelare dati
    del profilo/server o inserire password e dati di pagamento senza conferma esplicita.
@@ -137,7 +144,8 @@ una seconda pagina, poi verificano il comportamento reale di Chromium.
 cd backend
 python -m playwright install chromium
 pytest tests/test_browser.py -v
-pytest -q                      # suite completa: 141 test
+pytest tests/test_ai_loop.py -v
+pytest -q                      # suite completa: 146 test
 ```
 
 Copertura di `tests/test_browser.py`:
@@ -149,12 +157,19 @@ Copertura di `tests/test_browser.py`:
 - navigazione verso una seconda pagina e `browser_indietro`;
 - chiusura sessione e errore esplicito per elemento inesistente;
 - blocco SSRF con `ALLOW_PRIVATE_FETCH=false`;
+- **DNS su XHR, iframe e immagini**: un dominio che risolve a 127.0.0.1 viene bloccato
+  anche dopo che la pagina è stata caricata (test con server locale e DNS simulato);
+- **loop Gemini** con client finto: due tool nello stesso turno, function-response
+  corrette e limite `AGENT_MAX_TOOL_TURNS` rispettato (file `test_ai_loop.py`);
 - sessioni isolate tra due profili;
 - browser disattivato tramite `BROWSER_ENABLED=false`;
 - unit test del route guard per host privati, schema `file://` e opt-in.
 
 La CI GitHub installa Chromium con `python -m playwright install --with-deps chromium`
 prima di eseguire pytest.
+
+Guida pratica per provare tutto passo-passo (backend, browser, foto, voce, push, OAuth):
+[`TESTING_GUIDE.md`](TESTING_GUIDE.md).
 
 ---
 
@@ -172,6 +187,9 @@ prima di eseguire pytest.
 - **Un solo worker browser** per processo: richieste concorrenti vengono serializzate.
 - **RAM**: Chromium consuma ~200-400 MB per processo; in container piccoli ridurre i
   worker o disabilitare il browser.
+- **DNS rebinding**: la cache DNS e la validazione per richiesta riducono il rischio,
+  ma non sostituiscono un proxy egress con IP pinnati in ambienti ostili.
+- **Service worker** disabilitati: alcuni siti PWA potrebbero non funzionare del tutto.
 - **Evoluzione dei siti**: un selettore può cambiare; l'agente riceve l'errore e può
   rileggere la pagina, ma non c'è garanzia contro redesign o blocchi geografici.
 

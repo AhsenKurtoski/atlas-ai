@@ -51,9 +51,12 @@ ATLAS è pensato per **una famiglia su un'istanza privata**, non come SaaS multi
 - Ruoli: gestione profili riservata all'amministratore.
 - Rate limiting su PIN, chat e endpoint di scrittura.
 - Protezione SSRF su tutti i fetch web e sull'agente browser (`ALLOW_PRIVATE_FETCH=true` per opt-in esplicito).
-- Browser: blocco di redirect/iframe/XHR verso host privati, sessioni isolate per profilo,
-  nessuna persistenza di cookie su disco; il testo delle pagine è trattato come dato non
-  attendibile per limitare il prompt injection.
+- Browser: controllo DNS su **ogni** richiesta (navigazioni, redirect, iframe, immagini,
+  CSS, font e XHR) con cache di 60 s e fail-closed; blocco di host privati/loopback,
+  service worker disabilitati, sessioni isolate per profilo, nessuna persistenza di
+  cookie su disco. Resta una finestra teorica di DNS rebinding tra due risoluzioni:
+  per isolamento forte usare un proxy egress con IP pinnati.
+- Il testo delle pagine è trattato come dato non attendibile per limitare il prompt injection.
 - Azioni sensibili (credenziali, acquisti, invio moduli) richiedono conferma esplicita
   nel system prompt; l'agente non aggira CAPTCHA, 2FA o controlli di accesso.
 - Disattivazione automatica dei token push dichiarati morti da Expo.

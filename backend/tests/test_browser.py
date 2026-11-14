@@ -6,12 +6,18 @@ scroll, cronologia, chiusura e blocco SSRF. Non usano mock del browser.
 """
 from __future__ import annotations
 
+import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from app.services.browser import _request_allowed, browser_service, shutdown_browser
+from app.services.browser import (
+    _request_allowed,
+    browser_service,
+    clear_dns_cache,
+    shutdown_browser,
+)
 from app.tools.browser import (
     browser_apri,
     browser_chiudi,
@@ -54,10 +60,40 @@ SECONDA = """<!doctype html>
 </html>
 """
 
+# Pagina servita da loopback con ALLOW_PRIVATE_FETCH=true, poi usata per
+# verificare che XHR, immagini e iframe verso un host che risolve a 127.0.0.1
+# vengano bloccati dal route guard DNS anche dopo il caricamento iniziale.
+PAGINA_SSRF = """<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><title>Test SSRF subrisorse</title></head>
+<body>
+  <h1>Test SSRF</h1>
+  <button id="trigger" onclick="
+    fetch('http://evil.example:{port}/xhr', {mode:'no-cors'})
+      .then(function(){set('xhr-ok')}).catch(function(){set('xhr-blocked')});
+    var img = new Image();
+    img.src = 'http://evil.example:{port}/img';
+    img.onerror = function(){set('img-error')};
+    img.onload = function(){set('img-ok')};
+    var frame = document.createElement('iframe');
+    frame.src = 'http://evil.example:{port}/iframe';
+    document.body.appendChild(frame);
+  ">Trigger</button>
+  <div id="log"></div>
+  <script>function set(t){document.getElementById('log').textContent += t + ' ';}</script>
+</body>
+</html>
+"""
+
 
 class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802 - API http.server
-        body = SECONDA if self.path.startswith("/next") else PAGINA
+        self.server.requests.append(self.path)
+        if self.path.startswith("/ssrf"):
+            body = PAGINA_SSRF.replace("{port}", str(self.server.server_address[1]))
+        elif self.path.startswith("/next"):
+            body = SECONDA
+        else:
+            body = PAGINA
         encoded = body.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -70,17 +106,23 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 @pytest.fixture(scope="module")
-def site_url():
+def site_server():
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     server.daemon_threads = True
+    server.requests = []
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        yield f"http://127.0.0.1:{server.server_address[1]}/"
+        yield server
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+@pytest.fixture(scope="module")
+def site_url(site_server):
+    return f"http://127.0.0.1:{site_server.server_address[1]}/"
 
 
 @pytest.fixture(autouse=True)
@@ -88,8 +130,10 @@ def _browser_env(monkeypatch):
     monkeypatch.setenv("ALLOW_PRIVATE_FETCH", "true")
     monkeypatch.setenv("BROWSER_HEADLESS", "true")
     monkeypatch.setenv("BROWSER_ENABLED", "true")
+    clear_dns_cache()
     yield
     browser_chiudi()
+    clear_dns_cache()
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -167,6 +211,23 @@ class TestBrowserReale:
         output = browser_apri(site_url)
         assert "URL non consentito" in output
 
+    def test_blocca_dns_xhr_iframe_e_immagini(self, site_url, site_server, monkeypatch):
+        browser_apri(site_url + "ssrf")
+        site_server.requests.clear()
+        monkeypatch.setenv("ALLOW_PRIVATE_FETCH", "false")
+        clear_dns_cache()
+
+        def fake_getaddrinfo(host, port, *args, **kwargs):
+            # Simula un dominio che risolve su loopback (DNS rebinding).
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+
+        monkeypatch.setattr("app.services.browser.socket.getaddrinfo", fake_getaddrinfo)
+        browser_clicca("#trigger")
+        assert "xhr-blocked" in browser_vedi()
+        assert not [
+            path for path in site_server.requests if path.startswith(("/xhr", "/img", "/iframe"))
+        ]
+
     def test_sessioni_isolate_per_profilo(self, site_url):
         browser_service.open_page("alpha", site_url)
         browser_service.open_page("beta", site_url + "next")
@@ -213,8 +274,34 @@ class TestSicurezzaBrowser:
 
     def test_host_pubblici_e_schemi_sicuri(self, monkeypatch):
         monkeypatch.delenv("ALLOW_PRIVATE_FETCH", raising=False)
-        assert _request_allowed("https://example.com/")
+        assert _request_allowed("https://example.com/", check_dns=False)
         assert _request_allowed("data:image/png;base64,AAAA")
+
+    def test_dns_privato_bloccato_anche_per_sottorisorse(self, monkeypatch):
+        monkeypatch.delenv("ALLOW_PRIVATE_FETCH", raising=False)
+        clear_dns_cache()
+        chiamate = []
+
+        def fake_getaddrinfo(host, port, *args, **kwargs):
+            chiamate.append(host)
+            ip = "10.0.0.7" if host.startswith("interno") else "93.184.216.34"
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port))]
+
+        monkeypatch.setattr("app.services.browser.socket.getaddrinfo", fake_getaddrinfo)
+        assert not _request_allowed("http://interno.example/immagine.png")
+        assert not _request_allowed("http://interno.example/api")
+        assert _request_allowed("https://pubblico.example/frame")
+        assert chiamate.count("interno.example") == 1  # cache DNS
+
+    def test_dns_fail_closed(self, monkeypatch):
+        monkeypatch.delenv("ALLOW_PRIVATE_FETCH", raising=False)
+        clear_dns_cache()
+
+        def fake_getaddrinfo(*args, **kwargs):
+            raise socket.gaierror("nome non risolvibile")
+
+        monkeypatch.setattr("app.services.browser.socket.getaddrinfo", fake_getaddrinfo)
+        assert not _request_allowed("https://non-risolvibile.example/")
 
     def test_opt_in_privato(self, monkeypatch):
         monkeypatch.setenv("ALLOW_PRIVATE_FETCH", "true")

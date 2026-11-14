@@ -41,7 +41,7 @@ Richiede **Node 20+**. Per il typecheck: `npm run typecheck`.
 ## Verifiche obbligatorie prima di una PR
 
 ```bash
-cd backend && pytest -q          # include i 15 test Chromium reali
+cd backend && pytest -q          # 146 test, inclusi 18 Chromium reali + 2 loop Gemini
 cd frontend && npm run typecheck
 ```
 

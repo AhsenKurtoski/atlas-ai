@@ -7,9 +7,9 @@ threadpool. Il servizio serializza i comandi, mantiene una sessione isolata
 per profilo (cookie e pagine separati) e la chiude dopo inattività.
 
 Sicurezza:
-- ogni navigazione passa da ``validate_url`` (protezione SSRF);
-- ogni richiesta del browser verso host privati viene bloccata a livello di
-  routing, anche per redirect, iframe e XHR;
+- ogni richiesta HTTP(S) passa da ``_request_allowed`` con risoluzione DNS;
+- navigazioni, redirect, iframe, immagini, CSS, font e XHR verso host privati
+  vengono bloccati dal routing (fail-closed se il DNS non risolve);
 - le pagine web sono dati non attendibili: il prompt del modello vieta di
   seguire istruzioni contenute nel testo e di inserire credenziali senza
   conferma esplicita.
@@ -21,6 +21,7 @@ import atexit
 import ipaddress
 import queue
 import re
+import socket
 import sys
 import threading
 import time
@@ -30,7 +31,7 @@ from typing import Any, Callable
 from urllib.parse import urljoin, urlparse
 
 from app.core.logging_config import get_logger
-from app.core.net_guard import UnsafeURLError, allow_private_fetch, validate_url
+from app.core.net_guard import allow_private_fetch, validate_url
 from app.core.settings import env_bool, env_int
 
 log = get_logger(__name__)
@@ -38,6 +39,12 @@ log = get_logger(__name__)
 # Profilo corrente impostato dall'endpoint /chat: le sessioni browser non
 # devono mai condividere cookie o pagine tra membri della famiglia.
 browser_profile: ContextVar[str] = ContextVar("atlas_browser_profile", default="default")
+
+# Cache DNS condivisa dal route guard: evita una risoluzione per ogni immagine
+# o XHR della stessa pagina, mantenendo il blocco degli IP non pubblici.
+_DNS_CACHE_TTL = max(0, env_int("BROWSER_DNS_CACHE_TTL", default=60))
+_dns_cache: dict[tuple[str, int], tuple[float, bool]] = {}
+_dns_lock = threading.Lock()
 
 
 class BrowserError(RuntimeError):
@@ -72,15 +79,54 @@ def _blocked_host(host: str) -> bool:
     return not ip.is_global
 
 
-def _request_allowed(url: str) -> bool:
+def _is_public_host(host: str, port: int) -> bool:
+    """True solo se *tutti* gli IP risolti per l'host sono pubblici.
+
+    Il risultato è memorizzato per ``BROWSER_DNS_CACHE_TTL`` secondi: una
+    pagina con 30 immagini non deve fare 30 lookup DNS. Risoluzioni fallite
+    vengono bloccate (fail closed), non ignorate.
+    """
+    key = (host.lower().rstrip("."), port)
+    now = time.time()
+    if _DNS_CACHE_TTL:
+        with _dns_lock:
+            cached = _dns_cache.get(key)
+            if cached is not None and cached[0] > now:
+                return cached[1]
+    try:
+        infos = socket.getaddrinfo(key[0], port, type=socket.SOCK_STREAM)
+        addresses = {str(info[4][0]).split("%")[0] for info in infos}
+        resolved = [ipaddress.ip_address(address) for address in addresses]
+        allowed = bool(resolved) and all(ip.is_global for ip in resolved)
+    except (socket.gaierror, UnicodeError, OSError, ValueError):
+        allowed = False
+    if _DNS_CACHE_TTL:
+        with _dns_lock:
+            _dns_cache[key] = (now + _DNS_CACHE_TTL, allowed)
+    return allowed
+
+
+def clear_dns_cache() -> None:
+    """Svuota la cache DNS (test e cambio di configurazione di rete)."""
+    with _dns_lock:
+        _dns_cache.clear()
+
+
+def _request_allowed(url: str, *, check_dns: bool = True) -> bool:
     parsed = urlparse(url)
     if parsed.scheme in {"data", "blob", "about"}:
         return True
-    if parsed.scheme not in {"http", "https"}:
+    if parsed.scheme not in {"http", "https", "ws", "wss"}:
         return False
     if allow_private_fetch():
         return True
-    return not _blocked_host(parsed.hostname or "")
+    host = parsed.hostname or ""
+    if _blocked_host(host):
+        return False
+    if not check_dns:
+        return True
+    port = parsed.port or (443 if parsed.scheme in {"https", "wss"} else 80)
+    return _is_public_host(host, port)
 
 
 def _attr(value: str) -> str:
@@ -185,6 +231,8 @@ class _BrowserWorker(threading.Thread):
             timezone_id="Europe/Rome",
             java_script_enabled=True,
             accept_downloads=False,
+            # I service worker potrebbero aggirare il route guard: li blocchiamo.
+            service_workers="block",
         )
         context.set_default_timeout(self._action_timeout)
         context.set_default_navigation_timeout(self._nav_timeout)
@@ -199,21 +247,13 @@ class _BrowserWorker(threading.Thread):
     def _route(route: Any) -> None:
         try:
             url = route.request.url
+            # Vale per navigazioni, redirect, iframe, immagini, CSS, font e XHR:
+            # ogni richiesta HTTP(S) viene validata con DNS (cache inclusa).
             if not _request_allowed(url):
                 log.warning("Browser: richiesta privata bloccata (%s)", url[:120])
                 route.abort("blockedbyclient")
                 return
-            # Le navigazioni (inclusi i redirect) vengono rivalidate con DNS:
-            # un dominio pubblico che punta a 10.x/127.x non deve essere raggiunto.
-            if route.request.is_navigation_request() and not allow_private_fetch():
-                validate_url(url)
             route.continue_()
-        except UnsafeURLError as exc:
-            log.warning("Browser: navigazione SSRF bloccata (%s): %s", route.request.url[:120], exc)
-            try:
-                route.abort("blockedbyclient")
-            except Exception:
-                pass
         except Exception:
             try:
                 route.abort()
@@ -595,6 +635,7 @@ __all__ = [
     "BrowserError",
     "BrowserUnavailable",
     "BrowserService",
+    "clear_dns_cache",
     "browser_profile",
     "browser_service",
     "shutdown_browser",

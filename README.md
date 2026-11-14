@@ -7,7 +7,7 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 > integrazione reale con Gmail/Calendar e server MCP, e un **agente browser Chromium**
 > che apre siti, clicca, compila moduli e legge pagine dinamiche.
 
-**Licenza MIT** · CI su GitHub Actions · 141 test backend · TypeScript strict a 0 errori
+**Licenza MIT** · CI su GitHub Actions · 146 test backend · TypeScript strict a 0 errori
 
 ---
 
@@ -114,6 +114,7 @@ eas build --profile development --platform android
 | `BROWSER_ENABLED` | Abilita l'agente browser | `true` |
 | `BROWSER_HEADLESS` | Chromium senza finestra (server) | `true` |
 | `BROWSER_SESSION_TTL` | Durata sessione browser per profilo (s) | `900` |
+| `BROWSER_DNS_CACHE_TTL` | Cache DNS del route guard (s) | `60` |
 | `AGENT_MAX_TOOL_TURNS` | Turni massimi di tool per risposta (browser multi-step) | `10` |
 | `GITHUB_TOKEN` | Alza il rate limit GitHub | opzionale |
 | `NEWSAPI_KEY` | NewsAPI (altrimenti Google News RSS) | opzionale |
@@ -138,7 +139,7 @@ Expo Go, poi `10.0.2.2` su emulatore Android, poi `localhost`.
 | Segreto di firma persistito con permessi 600 (o da env) | ✅ |
 | **Logout reale**: token revocato sul server (denylist fino a scadenza) | ✅ |
 | **Ruoli**: solo l'amministratore `io` crea/elimina profili | ✅ |
-| **Protezione SSRF** su fetch web e browser (IP privati bloccati, redirect inclusi) | ✅ |
+| **Protezione SSRF** su fetch web e browser (DNS su navigazioni, XHR, iframe e immagini) | ✅ |
 | **Prompt injection**: il testo delle pagine è trattato come dato non attendibile | ✅ |
 | **Sessioni browser isolate per profilo** (cookie/pagine separati, TTL 15 min) | ✅ |
 | **Scheduler a istanza singola** via lock di processo (niente notifiche duplicate) | ✅ |
@@ -198,7 +199,7 @@ lo dice e spiega come attivarlo.
 ## 🧪 Qualità & test
 
 ```bash
-cd backend && pytest -q          # 141 test (inclusi 15 test browser reali)
+cd backend && pytest -q          # 146 test (18 browser Chromium + 2 loop Gemini finto)
 cd frontend && npm run typecheck  # 0 errori (strict)
 ```
 
@@ -215,7 +216,8 @@ cd frontend && npm run typecheck  # 0 errori (strict)
 | `test_scheduler_lock.py` | un solo processo esegue i job |
 | `test_weather.py` | variabili Open-Meteo corrette e parsing meteo/previsioni |
 | `test_chat_image.py` | invio foto: PNG valido, MIME/base64/dimensioni rifiutati correttamente |
-| `test_browser.py` | Chromium reale: navigazione, click, form, select, scroll, storia, sessioni isolate, SSRF |
+| `test_browser.py` | Chromium reale: navigazione, click, form, select, scroll, storia, sessioni isolate, DNS su XHR/iframe/immagini, SSRF |
+| `test_ai_loop.py` | loop Gemini con client finto: tool multipli, risposte function-response, limite turni |
 
 ---
 
@@ -241,7 +243,7 @@ atlas-ai/
 │   │   │   ├── google_oauth.py # OAuth Gmail/Calendar
 │   │   │   └── browser.py      # agente Chromium: worker, sessioni, SSRF
 │   │   └── tools/              # 45 tool (browser, family, finance, travel, utility, MCP, italiano)
-│   ├── tests/                  # 141 test
+│   ├── tests/                  # 146 test
 │   └── supabase_schema.sql
 └── frontend/
     ├── App.tsx                 # AuthContext, sessione, navigazione, notifiche
@@ -262,6 +264,7 @@ atlas-ai/
 - **CI**: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) esegue `pytest` e `tsc --noEmit` su ogni push/PR.
 - **Nessun segreto nel repo**: `.env` e `_local_db/` sono ignorati; usa `.env.example` come modello.
 - **Agente browser**: architettura, tool e limiti in [`docs/BROWSER.md`](docs/BROWSER.md).
+- **Guida di test passo-passo**: [`docs/TESTING_GUIDE.md`](docs/TESTING_GUIDE.md).
 
 ## 💸 Costi
 

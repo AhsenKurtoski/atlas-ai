@@ -29,7 +29,7 @@ funzionalità dichiarate nei README ma inesistenti. Dopo gli interventi:
 | Profili | ❌ "Aggiungi profilo" non faceva nulla | ✅ creazione/eliminazione reali con PIN |
 | Italiano | ❌ schermata statica, punteggi finti | ✅ lezioni, quiz, punti e streak reali |
 | Sessione app | ❌ riavvio → nessun ripristino | ✅ ripristino validato + logout |
-| Test backend | 54 dichiarati (con `verify_pin` patchato) | 141 reali (15 con Chromium), nessun patch dell'auth |
+| Test backend | 54 dichiarati (con `verify_pin` patchato) | 146 reali (18 Chromium + 2 loop Gemini), nessun patch dell'auth |
 | Typecheck frontend | dichiarato 0 | ✅ verificato 0 |
 | Multi-utente | ruoli assenti, logout non revocava | ✅ isolamento per profilo, admin-only, revoca reale |
 | Open source | nessuna LICENSE radice, CI assente | ✅ MIT, SECURITY, CONTRIBUTING, CI |
@@ -152,9 +152,10 @@ funzionalità dichiarate nei README ma inesistenti. Dopo gli interventi:
 | Funzione | Verifica | Esito |
 |---|---|---|
 | Foto dalla galleria → Gemini vision | test endpoint (PNG valido, MIME/base64 errati) + bundle iOS/Android | ✅ codice reale; vision da provare con chiave Gemini |
-| Agente browser | 15 test con Chromium su server locale (click, form, select, scroll, back, SSRF, sessioni) | ✅ reale |
+| Agente browser | 18 test con Chromium su server locale (click, form, select, scroll, back, DNS su XHR/iframe/immagini, SSRF, sessioni) | ✅ reale |
+| Loop Gemini | 2 test con client finto (tool multipli, function-response, limite turni) | ✅ reale |
 | Health `/` | uvicorn reale + curl | ✅ 200, 5 profili, 11 automazioni, db_mode |
-| Login PIN | curl `0000`, `1111` + 141 test | ✅ token valido, PIN errato rifiutato |
+| Login PIN | curl `0000`, `1111` + 146 test | ✅ token valido, PIN errato rifiutato |
 | Protezione endpoint | curl senza token | ✅ 401 |
 | Todos CRUD | curl + test | ✅ aggiunta, lista, completamento |
 | Budget | curl + test | ✅ totale e percentuali |
@@ -214,19 +215,22 @@ Priorità alta:
    molto protetti restano non automatizzabili. Documentare all'utente il blocco reale.
 8. **Prompt injection web**: il system prompt e il route guard riducono il rischio, ma
    nessun LLM è immune. Per azioni distruttive serve sempre conferma umana.
+9. **DNS rebinding**: il route guard valida ogni richiesta e usa una cache di 60 s; un
+   attaccante che cambia DNS tra due risoluzioni potrebbe ancora sfruttare la finestra.
+   Per isolamento forte usare un proxy egress con IP pinnati o una rete dedicata.
 
 Priorità media:
-9. **Streaming delle risposte chat** (oggi risposta completa): migliora la percezione di
+10. **Streaming delle risposte chat** (oggi risposta completa): migliora la percezione di
    velocità sui testi lunghi.
-10. **Cifratura dei messaggi** a riposo se il DB è condiviso.
-11. **Backup automatico** di `_local_db` in modalità locale.
-12. **Ruff/mypy** in CI (non sono tra le dipendenze: aggiungerli come dev dependency).
-13. **Accessibilità**: label per screen reader su icone e pulsanti.
-14. **i18n** della UI (oggi solo italiano, coerente col prodotto).
+11. **Cifratura dei messaggi** a riposo se il DB è condiviso.
+12. **Backup automatico** di `_local_db` in modalità locale.
+13. **Ruff/mypy** in CI (non sono tra le dipendenze: aggiungerli come dev dependency).
+14. **Accessibilità**: label per screen reader su icone e pulsanti.
+15. **i18n** della UI (oggi solo italiano, coerente col prodotto).
 
 Priorità bassa:
-15. Rimuovere `expo-blur` se non verrà usato.
-16. Documentare le quote dei servizi gratuiti usati (Gemini, CoinGecko, MyMemory).
+16. Rimuovere `expo-blur` se non verrà usato.
+17. Documentare le quote dei servizi gratuiti usati (Gemini, CoinGecko, MyMemory).
 
 ---
 
@@ -234,8 +238,9 @@ Priorità bassa:
 
 ```text
 backend:  python -m venv venv (Python 3.12) + pip install -r requirements.txt   → OK
-backend:  python -m pytest -q                                                  → 141 passed
-backend:  pytest tests/test_browser.py -v                                      → 15 passed (Chromium reale)
+backend:  python -m pytest -q                                                  → 146 passed
+backend:  pytest tests/test_browser.py -v                                      → 18 passed (Chromium reale)
+backend:  pytest tests/test_ai_loop.py -v                                      → 2 passed (client Gemini finto)
 backend:  python -m playwright install chromium                                → OK (Chromium 159)
 backend:  uvicorn main:app --port 8010 + curl /, /auth/pin, /todos, /budget,
           /dashboard, /italiano/lezione, /impostazioni, /automazioni            → 200 / 401 attesi

@@ -65,7 +65,8 @@ EXPO_PUBLIC_API_URL=http://192.168.1.50:8010 npx expo start
 > **Agente browser**: la navigazione avviene interamente nel backend con Chromium
 > headless. L'app non richiede permessi aggiuntivi: basta chiedere in chat, ad esempio
 > «apri quel sito e cerca il treno». Cookie e pagine sono isolati per profilo e non
-> vengono salvati sul dispositivo. Dettagli in [`../docs/BROWSER.md`](../docs/BROWSER.md).
+> vengono salvati sul dispositivo. Dettagli in [`../docs/BROWSER.md`](../docs/BROWSER.md)
+> e guida di test passo-passo in [`../docs/TESTING_GUIDE.md`](../docs/TESTING_GUIDE.md).
 
 ---
 

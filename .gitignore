@@ -56,8 +56,10 @@ frontend/.export-*/
 !.env.example
 backend/.env
 backend/.env.*
+!backend/.env.example
 frontend/.env
 frontend/.env.*
+!frontend/.env.example
 
 # Dati persistiti localmente (fallback JSON se Supabase non raggiungibile — MAI committare!)
 backend/_local_db/
