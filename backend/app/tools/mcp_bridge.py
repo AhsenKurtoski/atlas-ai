@@ -1,428 +1,477 @@
 """
-ATLAS AI — Bridge per Server MCP (Model Context Protocol)
-==========================================================
+Client MCP (Model Context Protocol) reale per ATLAS AI v3.0.
 
-Modulo che integra i server MCP disponibili nel runtime di ATLAS AI
-come tools chiamabili tramite function-calling dell'AI.
+ATLAS non finge di avere server MCP: si collega davvero a server MCP
+configurati via variabile d'ambiente `MCP_SERVERS` (JSON) e ne espone i tool
+all'AI. Il trasporto implementato è **Streamable HTTP** (JSON-RPC 2.0 su POST,
+con risposte JSON o SSE), che è quello usato dai server MCP moderni.
 
-Ogni funzione è decorata con docstring + annotazioni forti per il parsing Pydantic,
-e implementa un **graceful fallback** se il server MCP non è raggiungibile:
-  * Multi_Fetch  → fallback a `requests` + `beautifulsoup4` (installati)
-  * GitHub MCP   → fallback a GitHub public REST API v3 (senza auth, rate limit 60/h)
-  * Browser / Playwright / Chrome DevTools / Blender → messaggio istruttivo +
-                                 suggerimento attivazione MCP nel runtime.
+Esempio `.env`:
 
-I server MCP integrati:
-  - mcp_Multi_Fetch        (fetch_html, fetch_json, fetch_markdown, fetch_txt)
-  - mcp_GitHub             (get_file_contents, search_code, search_repositories)
-  - integrated_browser     (navigate, click, screenshot, evaluate)
-  - mcp_Playwright         (playwright_navigate, playwright_screenshot, playwright_click)
-  - mcp_Chrome_DevTools_MCP (performance, console messages, network)
-  - mcp_Blender            (3D assets: sketchfab, polyhaven, hyper3d generation)
-  - mcp_testsprite         (QA / test generation)
+    MCP_SERVERS={"files":{"url":"http://127.0.0.1:9000/mcp"},
+                 "remoto":{"url":"https://mcp.example.com/mcp","headers":{"Authorization":"Bearer ..."}}}
+
+In più restano disponibili due capacità native, sempre reali e gratuite:
+  * fetch web (HTML → testo/Markdown, JSON) con `requests` + BeautifulSoup
+  * GitHub REST API pubblica (con `GITHUB_TOKEN` opzionale per i limiti)
 """
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Optional
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 import requests
 
 from app.core.logging_config import get_logger
+from app.core.net_guard import UnsafeURLError, safe_get
 
 log = get_logger(__name__)
-
-# ---------------------------------------------------------------------
-# Configurazione MCP: indica all'AI quali server sono disponibili
-# tramite l'enum `_MCP_SERVERS`. Il router li usa come "hint".
-# ---------------------------------------------------------------------
-_MCP_SERVERS = frozenset(
-    {
-        "mcp_Multi_Fetch",
-        "mcp_GitHub",
-        "integrated_browser",
-        "mcp_Playwright",
-        "mcp_Chrome_DevTools_MCP",
-        "mcp_Blender",
-        "mcp_testsprite",
-    }
-)
 
 _HEADERS_BROWSER = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/126.0 Safari/537.36 ATLAS-AI/3.0 (+https://atlas.ai)"
+        "Chrome/126.0 Safari/537.36 ATLAS-AI/3.0"
     ),
     "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
 }
-
 _GITHUB_API = "https://api.github.com"
+_MCP_PROTOCOL_VERSION = "2025-06-18"
+_MCP_TIMEOUT = 30
+
+# Stato delle sessioni MCP: url -> {"session_id": str, "initialized": bool}
+_MCP_SESSIONS: dict[str, dict[str, Any]] = {}
 
 
 # =====================================================================
-#  1 — mcp_Multi_Fetch: fetch web HTML / JSON / Markdown / TXT
+#  Configurazione server MCP
 # =====================================================================
+def _servers_config() -> dict[str, dict[str, Any]]:
+    """Legge `MCP_SERVERS` (JSON) e normalizza la configurazione."""
+    raw = os.getenv("MCP_SERVERS", "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        log.error("MCP_SERVERS non è JSON valido: %s", exc)
+        return {}
+    if not isinstance(parsed, dict):
+        log.error("MCP_SERVERS deve essere un oggetto {nome: {url: ...}}")
+        return {}
+    servers: dict[str, dict[str, Any]] = {}
+    for name, value in parsed.items():
+        if isinstance(value, str):
+            servers[str(name)] = {"url": value, "headers": {}}
+        elif isinstance(value, dict) and value.get("url"):
+            servers[str(name)] = {
+                "url": str(value["url"]),
+                "headers": {str(k): str(v) for k, v in (value.get("headers") or {}).items()},
+            }
+    return servers
 
-def mcp_web_fetch_markdown(url: str, max_chars: int = 4000) -> str:
+
+def _server(name: str) -> dict[str, Any]:
+    servers = _servers_config()
+    if name not in servers:
+        raise MCPError(
+            f"Server MCP '{name}' non configurato. Server disponibili: "
+            f"{', '.join(servers) if servers else '(nessuno)'}."
+        )
+    return servers[name]
+
+
+class MCPError(RuntimeError):
+    """Errore di comunicazione con un server MCP."""
+
+
+# =====================================================================
+#  Trasporto JSON-RPC 2.0 / Streamable HTTP
+# =====================================================================
+def _parse_sse(text: str, request_id: int | None) -> dict[str, Any] | None:
+    """Estrae la risposta JSON-RPC da un corpo text/event-stream."""
+    result: dict[str, Any] | None = None
+    for line in text.splitlines():
+        if not line.startswith("data:"):
+            continue
+        payload = line[5:].strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            message = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(message, dict):
+            continue
+        if request_id is None or message.get("id") == request_id:
+            result = message
+    return result
+
+
+def _rpc(
+    name: str,
+    method: str,
+    params: dict[str, Any] | None = None,
+    *,
+    notification: bool = False,
+) -> dict[str, Any]:
+    """Esegue una chiamata JSON-RPC verso il server MCP indicato."""
+    cfg = _server(name)
+    url = cfg["url"]
+    session = _MCP_SESSIONS.setdefault(url, {"session_id": None, "initialized": False})
+
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+        "MCP-Protocol-Version": _MCP_PROTOCOL_VERSION,
+    }
+    headers.update(cfg.get("headers") or {})
+    if session.get("session_id"):
+        headers["Mcp-Session-Id"] = session["session_id"]
+
+    if notification:
+        payload: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
+        if params:
+            payload["params"] = params
+    else:
+        request_id = int(os.urandom(3).hex(), 16)
+        payload = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}}
+
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=_MCP_TIMEOUT)
+    except requests.RequestException as exc:
+        raise MCPError(f"Server MCP '{name}' non raggiungibile: {exc}") from exc
+
+    if notification and response.status_code in (200, 202, 204):
+        return {}
+
+    content_type = response.headers.get("Content-Type", "")
+    if response.status_code >= 400:
+        raise MCPError(
+            f"Server MCP '{name}' ha risposto HTTP {response.status_code}: {response.text[:200]}"
+        )
+
+    if "text/event-stream" in content_type.lower():
+        message = _parse_sse(response.text, payload.get("id"))
+    else:
+        try:
+            message = response.json()
+        except ValueError as exc:
+            raise MCPError(f"Risposta MCP non JSON da '{name}': {response.text[:200]}") from exc
+
+    if message is None:
+        raise MCPError(f"Nessuna risposta JSON-RPC da '{name}'.")
+
+    session_id = response.headers.get("Mcp-Session-Id")
+    if session_id:
+        session["session_id"] = session_id
+
+    if message.get("error"):
+        error = message["error"]
+        detail = error.get("message") if isinstance(error, dict) else str(error)
+        raise MCPError(f"Errore MCP da '{name}': {detail}")
+
+    return message.get("result") or {}
+
+
+def _ensure_initialized(name: str) -> None:
+    cfg = _server(name)
+    session = _MCP_SESSIONS.setdefault(cfg["url"], {"session_id": None, "initialized": False})
+    if session.get("initialized"):
+        return
+    _rpc(
+        name,
+        "initialize",
+        {
+            "protocolVersion": _MCP_PROTOCOL_VERSION,
+            "capabilities": {"roots": {"listChanged": False}},
+            "clientInfo": {"name": "atlas-ai", "version": "3.0.0"},
+        },
+    )
+    try:
+        _rpc(name, "notifications/initialized", notification=True)
+    except MCPError as exc:
+        log.debug("notifications/initialized ignorata da %s: %s", name, exc)
+    session["initialized"] = True
+
+
+# =====================================================================
+#  Tool esposti all'AI
+# =====================================================================
+def mcp_elenca_server() -> str:
+    """Elenca i server MCP configurati in ATLAS (con URL) e lo stato della sessione."""
+    servers = _servers_config()
+    if not servers:
+        return (
+            "Nessun server MCP configurato.\n"
+            "Per collegarne uno, imposta la variabile d'ambiente MCP_SERVERS, esempio:\n"
+            'MCP_SERVERS={"files":{"url":"http://127.0.0.1:9000/mcp"}}\n'
+            "Poi riavvia il backend."
+        )
+    righe = ["🧭 Server MCP configurati:"]
+    for name, cfg in servers.items():
+        session = _MCP_SESSIONS.get(cfg["url"], {})
+        stato = "sessione attiva" if session.get("initialized") else "da inizializzare"
+        righe.append(f"- **{name}** → {cfg['url']} ({stato})")
+    return "\n".join(righe)
+
+
+def mcp_elenca_tool(server: str) -> str:
+    """Elenca i tool esposti da un server MCP configurato.
+
+    Args:
+        server: Nome del server MCP come definito in MCP_SERVERS.
     """
-    Scarica una pagina web e ne restituisce il contenuto in formato Markdown
-    (o plain text pulito).
+    try:
+        _ensure_initialized(server)
+        result = _rpc(server, "tools/list", {})
+    except MCPError as exc:
+        log.warning("mcp_elenca_tool(%s): %s", server, exc)
+        return f"⚠️ {exc}"
+    tools = result.get("tools") or []
+    if not tools:
+        return f"Il server MCP '{server}' non espone alcun tool."
+    righe = [f"🧰 Tool di '{server}':"]
+    for tool in tools:
+        descrizione = (tool.get("description") or "").strip().splitlines()
+        sintesi = descrizione[0][:160] if descrizione else "(senza descrizione)"
+        schema = tool.get("inputSchema") or {}
+        props = ", ".join((schema.get("properties") or {}).keys())
+        righe.append(f"- **{tool.get('name')}** — {sintesi}" + (f" | parametri: {props}" if props else ""))
+    return "\n".join(righe)
+
+
+def mcp_chiama_tool(server: str, tool: str, argomenti_json: str = "{}") -> str:
+    """Esegue un tool di un server MCP configurato e ne restituisce il risultato.
+
+    Args:
+        server: Nome del server MCP (vedi MCP_SERVERS).
+        tool: Nome del tool da eseguire (vedi mcp_elenca_tool).
+        argomenti_json: Oggetto JSON con gli argomenti del tool (default "{}").
+    """
+    try:
+        argomenti = json.loads(argomenti_json) if argomenti_json and argomenti_json.strip() else {}
+    except json.JSONDecodeError as exc:
+        return f"❌ argomenti_json non è JSON valido: {exc}"
+    if not isinstance(argomenti, dict):
+        return "❌ argomenti_json deve essere un oggetto JSON."
+
+    try:
+        _ensure_initialized(server)
+        result = _rpc(server, "tools/call", {"name": tool, "arguments": argomenti})
+    except MCPError as exc:
+        log.warning("mcp_chiama_tool(%s/%s): %s", server, tool, exc)
+        return f"⚠️ {exc}"
+
+    if result.get("isError"):
+        parti = _extract_text(result)
+        return f"⚠️ Tool '{tool}' ha restituito un errore: {parti or '(nessun dettaglio)'}"
+    testo = _extract_text(result)
+    return testo or f"✅ Tool '{tool}' eseguito (nessun output testuale)."
+
+
+def _extract_text(result: dict[str, Any]) -> str:
+    """Concatena i blocchi testuali del risultato MCP."""
+    chunks: list[str] = []
+    for block in result.get("content") or []:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "text" and block.get("text"):
+            chunks.append(str(block["text"]))
+        elif block.get("type") == "resource" and block.get("resource"):
+            resource = block["resource"]
+            if isinstance(resource, dict) and resource.get("text"):
+                chunks.append(str(resource["text"]))
+    if not chunks and result.get("structuredContent"):
+        chunks.append(json.dumps(result["structuredContent"], ensure_ascii=False, indent=2))
+    return "\n".join(chunks)[:6000]
+
+
+# =====================================================================
+#  Capacità native: fetch web
+# =====================================================================
+def mcp_web_fetch_markdown(url: str, max_chars: int = 4000) -> str:
+    """Scarica una pagina web e restituisce il testo pulito (ex HTML → Markdown).
 
     Args:
         url: URL completo (https://...) da scaricare.
         max_chars: Numero massimo di caratteri da restituire (default 4000).
-
-    Returns:
-        Contenuto Markdown / testo della pagina, troncato a max_chars.
     """
+    if not url.lower().startswith(("http://", "https://")):
+        return "Fornisci un URL valido che inizi per http:// o https://"
     try:
-        resp = requests.get(url, headers=_HEADERS_BROWSER, timeout=15)
-        resp.raise_for_status()
-        content_type = resp.headers.get("Content-Type", "").lower()
-        text: str
+        response = safe_get(url, headers=_HEADERS_BROWSER, timeout=15)
+        response.raise_for_status()
+        content_type = response.headers.get("Content-Type", "").lower()
+        text = response.text
         if "text/html" in content_type:
-            # Graceful fallback BeautifulSoup (già installato)
             try:
-                from bs4 import BeautifulSoup  # type: ignore[import-not-found]
+                from bs4 import BeautifulSoup
 
-                soup = BeautifulSoup(resp.text, "lxml")
-                for tag in soup(["script", "style", "nav", "footer", "noscript"]):
+                soup = BeautifulSoup(response.text, "lxml")
+                for tag in soup(["script", "style", "nav", "footer", "noscript", "iframe"]):
                     tag.decompose()
                 text = soup.get_text(separator="\n", strip=True)
-            except Exception:
-                text = resp.text
-        else:
-            text = resp.text
+            except Exception as exc:  # parser non disponibile: testo grezzo
+                log.debug("BeautifulSoup non disponibile: %s", exc)
         text = text.replace("\r", "").replace("\t", " ")
-        # Collassa newlines multipli
         while "\n\n\n" in text:
             text = text.replace("\n\n\n", "\n\n")
-        return text[:max_chars] + (
-            "\n\n[...troncato — aumenta `max_chars` per intero contenuto]"
-            if len(text) > max_chars
-            else ""
-        )
+        limite = max(500, min(int(max_chars or 4000), 20000))
+        return text[:limite] + ("\n\n[...troncato]" if len(text) > limite else "")
+    except UnsafeURLError as exc:
+        log.warning("mcp_web_fetch_markdown bloccata: %s -> %s", url, exc)
+        return f"⚠️ URL non consentito: {exc}"
     except requests.RequestException as exc:
-        log.warning("mcp_web_fetch_markdown fallita rete: %s -> %s", url, exc)
-        return (
-            f"⚠️ Impossibile raggiungere {url} (errore rete: {exc}).\n"
-            "Suggerimento: abilita il server MCP `mcp_Multi_Fetch` nel runtime ATLAS "
-            "per una gestione resilientissima di redirect, caching e rendering JS."
-        )
-    except Exception as exc:  # pragma: no cover
-        log.exception("mcp_web_fetch_markdown errore: %s", exc)
-        return f"Errore generico durante fetch di {url}: {exc!r}"
+        log.warning("mcp_web_fetch_markdown fallita: %s -> %s", url, exc)
+        return f"⚠️ Impossibile raggiungere {url} (errore rete: {exc})."
 
 
 def mcp_web_fetch_json(url: str, query_params: Optional[dict[str, Any]] = None) -> str:
-    """
-    Scarica un endpoint JSON REST e restituisce la risposta formattata.
+    """Scarica un endpoint JSON e restituisce la risposta formattata.
 
     Args:
         url: URL endpoint (https://).
-        query_params: Dizionario chiave/valore da appendere come query string (opzionale).
-
-    Returns:
-        Stringa JSON formattata (indentata) della risposta.
+        query_params: Dizionario chiave/valore da aggiungere come query string.
     """
+    if not url.lower().startswith(("http://", "https://")):
+        return "Fornisci un URL valido che inizi per http:// o https://"
     try:
-        if query_params:
-            sep = "&" if "?" in url else "?"
-            url = f"{url}{sep}{urlencode(query_params)}"
-        resp = requests.get(
+        response = safe_get(
             url,
             headers={**_HEADERS_BROWSER, "Accept": "application/json"},
             timeout=15,
+            params=query_params,
         )
-        resp.raise_for_status()
-        payload = resp.json()
+        response.raise_for_status()
+        payload = response.json()
         out = json.dumps(payload, ensure_ascii=False, indent=2)
-        return out[: 8000] + (
-            "\n\n[...troncato per lunghezza]" if len(out) > 8000 else ""
-        )
+        return out[:8000] + ("\n\n[...troncato]" if len(out) > 8000 else "")
+    except UnsafeURLError as exc:
+        log.warning("mcp_web_fetch_json bloccata: %s -> %s", url, exc)
+        return f"⚠️ URL non consentito: {exc}"
     except requests.RequestException as exc:
-        log.warning("mcp_web_fetch_json fallita rete %s: %s", url, exc)
-        return (
-            f"⚠️ Impossibile recuperare JSON da {url} (errore rete: {exc}).\n"
-            "Attiva il server MCP `mcp_Multi_Fetch` nel runtime ATLAS per una gestione"
-            " più robusta (caching, retry, TLS custom)."
-        )
-    except json.JSONDecodeError as exc:
-        return f"❌ Risposta non valida (JSON) da {url}: {exc.msg}"
-    except Exception as exc:  # pragma: no cover
-        return f"Errore generico mcp_web_fetch_json {url}: {exc!r}"
+        log.warning("mcp_web_fetch_json fallita: %s -> %s", url, exc)
+        return f"⚠️ Impossibile recuperare JSON da {url} (errore rete: {exc})."
+    except ValueError as exc:
+        return f"❌ Risposta non JSON da {url}: {exc}"
 
 
 # =====================================================================
-#  2 — mcp_GitHub: lettura file, ricerca codice, info repo
+#  Capacità native: GitHub REST
 # =====================================================================
+def _github_headers(accept: str = "application/vnd.github+json") -> dict[str, str]:
+    headers = {**_HEADERS_BROWSER, "Accept": accept}
+    token = os.getenv("GITHUB_TOKEN", "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
 
 def mcp_github_get_file(owner: str, repo: str, path: str, branch: str = "main") -> str:
-    """
-    Legge il contenuto di un singolo file da un repository GitHub pubblico.
+    """Legge un file da un repository GitHub.
 
     Args:
-        owner: Username o organizzazione proprietaria (es. "octocat").
+        owner: Username o organizzazione (es. "octocat").
         repo: Nome repository (es. "Hello-World").
-        path: Percorso file nel repo (es. "README.md").
-        branch: Nome branch (default "main").
-
-    Returns:
-        Contenuto file come testo, o messaggio errore.
+        path: Percorso del file (es. "README.md").
+        branch: Branch o tag (default "main").
     """
     try:
-        safe_path = quote(path)
-        api_url = f"{_GITHUB_API}/repos/{owner}/{repo}/contents/{safe_path}?ref={quote(branch)}"
-        resp = requests.get(
+        api_url = f"{_GITHUB_API}/repos/{owner}/{repo}/contents/{quote(path)}?ref={quote(branch)}"
+        response = requests.get(
             api_url,
-            headers={**_HEADERS_BROWSER, "Accept": "application/vnd.github.raw+json"},
+            headers=_github_headers("application/vnd.github.raw+json"),
             timeout=15,
         )
-        if resp.status_code == 404:
-            return (
-                f"📂 File non trovato in {owner}/{repo}@{branch}: `{path}`\n"
-                "Suggerimento: attiva il server MCP `mcp_GitHub` nel runtime per "
-                "accesso illimitato a repo pubbliche/private e scrittura."
-            )
-        if resp.status_code == 403:
-            return (
-                "⚠️ Rate limit GitHub pubblico raggiunto (60 richieste/ora).\n"
-                "Per oltre, configura GITHUB_TOKEN o usa il server MCP `mcp_GitHub`"
-                " autenticato nel runtime ATLAS."
-            )
-        resp.raise_for_status()
-        return resp.text[:8000] + (
-            "\n\n[...troncato]" if len(resp.text) > 8000 else ""
-        )
-    except Exception as exc:  # pragma: no cover
-        log.exception("mcp_github_get_file %s/%s/%s: %s", owner, repo, path, exc)
-        return f"Errore mcp_github_get_file: {exc!r}"
+        if response.status_code == 404:
+            return f"📂 File non trovato in {owner}/{repo}@{branch}: `{path}`"
+        if response.status_code == 403:
+            return "⚠️ Rate limit GitHub raggiunto. Imposta GITHUB_TOKEN per alzare il limite."
+        response.raise_for_status()
+        return response.text[:8000] + ("\n\n[...troncato]" if len(response.text) > 8000 else "")
+    except requests.RequestException as exc:
+        log.warning("mcp_github_get_file %s/%s/%s: %s", owner, repo, path, exc)
+        return f"⚠️ Errore GitHub: {exc}"
 
 
 def mcp_github_search_code(query: str, language: Optional[str] = None, max_results: int = 5) -> str:
-    """
-    Cerca codice sorgente in GitHub pubblico.
+    """Cerca codice su GitHub.
 
     Args:
         query: Testo di ricerca (es. "FastAPI rate limit").
-        language: Filtra per linguaggio (es. "python", "typescript") — opzionale.
+        language: Filtro linguaggio (es. "python", "typescript") — opzionale.
         max_results: Numero massimo di risultati (default 5).
-
-    Returns:
-        Elenco formattato di risultati (repo, path, anteprima).
     """
     try:
-        q = query
-        if language:
-            q += f" language:{language}"
-        url = f"{_GITHUB_API}/search/code?q={quote(q)}&per_page={max(max_results,1)}"
-        resp = requests.get(url, headers={**_HEADERS_BROWSER, "Accept": "application/vnd.github+json"}, timeout=20)
-        if resp.status_code == 403:
-            return "⚠️ Rate limit ricerca GitHub raggiunto — abilita il server MCP `mcp_GitHub` autenticato."
-        resp.raise_for_status()
-        data = resp.json()
-        items = data.get("items") or []
+        qualifier = f"{query} language:{language}" if language else query
+        limit = max(1, min(int(max_results or 5), 20))
+        api_url = f"{_GITHUB_API}/search/code?q={quote(qualifier)}&per_page={limit}"
+        response = requests.get(api_url, headers=_github_headers(), timeout=20)
+        if response.status_code == 403:
+            return "⚠️ Rate limit ricerca GitHub raggiunto. Imposta GITHUB_TOKEN."
+        response.raise_for_status()
+        items = (response.json() or {}).get("items") or []
         if not items:
             return f"Nessun risultato per query='{query}'"
-        out: list[str] = []
-        for i, it in enumerate(items[:max_results], 1):
-            repo_full = (it.get("repository") or {}).get("full_name", "?")
-            path = it.get("path", "?")
-            html_url = it.get("html_url", "")
-            score = it.get("score", 0)
-            out.append(f"{i}. **{repo_full}** — `{path}`\n   🔗 {html_url}\n   (score={score:.1f})")
-        return "\n\n".join(out)
-    except Exception as exc:  # pragma: no cover
-        log.exception("mcp_github_search_code q=%s: %s", query, exc)
-        return f"Errore mcp_github_search_code: {exc!r}"
+        righe: list[str] = []
+        for index, item in enumerate(items[:limit], 1):
+            repo_full = (item.get("repository") or {}).get("full_name", "?")
+            righe.append(
+                f"{index}. **{repo_full}** — `{item.get('path', '?')}`\n"
+                f"   🔗 {item.get('html_url', '')}"
+            )
+        return "\n\n".join(righe)
+    except requests.RequestException as exc:
+        log.warning("mcp_github_search_code %s: %s", query, exc)
+        return f"⚠️ Errore GitHub: {exc}"
 
 
 def mcp_github_search_repositories(query: str, sort: str = "stars", max_results: int = 5) -> str:
-    """
-    Cerca repository GitHub pubblici per popolarità/rilevanza.
+    """Cerca repository GitHub per popolarità/rilevanza.
 
     Args:
         query: Termine di ricerca (es. "fastapi ai assistant").
-        sort: Criterio ordinamento: "stars", "forks", "help-wanted-issues", "updated".
+        sort: Ordinamento: "stars", "forks", "updated" (default "stars").
         max_results: Numero risultati (default 5).
-
-    Returns:
-        Lista repo: nome full, stelle, linguaggio, descrizione, URL.
     """
     try:
-        url = (
+        limit = max(1, min(int(max_results or 5), 20))
+        api_url = (
             f"{_GITHUB_API}/search/repositories?q={quote(query)}"
-            f"&sort={quote(sort)}&per_page={max(max_results,1)}&order=desc"
+            f"&sort={quote(sort)}&order=desc&per_page={limit}"
         )
-        resp = requests.get(url, headers={**_HEADERS_BROWSER}, timeout=15)
-        if resp.status_code == 403:
-            return "⚠️ Rate limit GitHub ricerca pubbliche raggiunto."
-        resp.raise_for_status()
-        items = (resp.json() or {}).get("items") or []
+        response = requests.get(api_url, headers=_github_headers(), timeout=15)
+        if response.status_code == 403:
+            return "⚠️ Rate limit GitHub raggiunto. Imposta GITHUB_TOKEN."
+        response.raise_for_status()
+        items = (response.json() or {}).get("items") or []
         if not items:
             return f"Nessun repo trovato per query='{query}'"
-        out: list[str] = []
-        for i, r in enumerate(items[:max_results], 1):
-            stars = r.get("stargazers_count", 0)
-            forks = r.get("forks_count", 0)
-            lang = r.get("language") or "—"
-            desc = (r.get("description") or "(nessuna descrizione)").strip()
-            link = r.get("html_url", "")
-            out.append(
-                f"{i}. **{r.get('full_name','?')}** ⭐ {stars:,}  🍴 {forks:,}  [lang: {lang}]\n"
-                f"   {desc}\n   🔗 {link}"
+        righe: list[str] = []
+        for index, repo in enumerate(items[:limit], 1):
+            righe.append(
+                f"{index}. **{repo.get('full_name', '?')}** ⭐ {repo.get('stargazers_count', 0):,} "
+                f"[{repo.get('language') or '—'}]\n"
+                f"   {(repo.get('description') or '(nessuna descrizione)').strip()}\n"
+                f"   🔗 {repo.get('html_url', '')}"
             )
-        return "\n\n".join(out)
-    except Exception as exc:  # pragma: no cover
-        log.exception("mcp_github_search_repositories q=%s: %s", query, exc)
-        return f"Errore mcp_github_search_repositories: {exc!r}"
-
-
-# =====================================================================
-#  3 — integrated_browser / mcp_Playwright: automazione web
-#  (placeholder istruttivi in modalità fallback; se MCP è attivo nel
-#   runtime ATLAS essi sostituiranno queste funzioni)
-# =====================================================================
-
-def mcp_browse_url(url: str, wait_seconds: int = 2, screenshot: bool = False) -> str:
-    """
-    Apri un URL in un browser headless integrato (MCP `integrated_browser`
-    oppure `mcp_Playwright` nel runtime).
-
-    Args:
-        url: Indirizzo web completo (https://).
-        wait_seconds: Secondi di attesa caricamento (default 2).
-        screenshot: Se True salva screenshot (solo se MCP attivo).
-
-    Returns:
-        Anteprima HTML testuale / stato operazione.
-    """
-    return (
-        f"📡 Richiesta di navigazione registrata: {url} (wait={wait_seconds}s, screenshot={screenshot}).\n\n"
-        "⚠️ Browser integrato **MCP** non attivo in questo ambiente.\n"
-        "Per abilitarlo, avvia ATLAS AI nel runtime TRAE dove sono disponibili i server:\n"
-        "  - `integrated_browser`  (navigazione interattiva, click, screenshot, evaluate JS)\n"
-        "  - `mcp_Playwright`      (automazione headless multi-browser, fill, form, PDF, trace)\n"
-        "  - `mcp_Chrome_DevTools_MCP` (Lighthouse, performance, rete, console, heap snapshot)\n\n"
-        "In assenza di MCP, puoi usare `mcp_web_fetch_markdown('" + url + "')` per leggere il sorgente statico."
-    )
-
-
-def mcp_playwright_automate(url: str, click_selector: Optional[str] = None, fill_selector: Optional[str] = None, fill_value: Optional[str] = None) -> str:
-    """
-    Esegui uno step di automazione Playwright (click/fill) su una pagina.
-    Disponibile solo con server MCP `mcp_Playwright` attivo.
-    """
-    steps = [f"Apri {url}"]
-    if click_selector:
-        steps.append(f"Click sul selettore CSS: {click_selector}")
-    if fill_selector and fill_value is not None:
-        steps.append(f"Fill '{fill_selector}' con '{fill_value}'")
-    return (
-        "🎭 Playwright automation richiesta:\n - " + "\n - ".join(steps) + "\n\n"
-        "⚠️ MCP `mcp_Playwright` non disponibile in questo runtime ATLAS.\n"
-        "Abilitalo in TRAE per usare: playwright_navigate, playwright_fill, playwright_click, playwright_screenshot, playwright_save_as_pdf."
-    )
-
-
-# =====================================================================
-#  4 — mcp_Blender: asset 3D
-# =====================================================================
-
-def mcp_blender_search_3d_assets(keyword: str, source: str = "polyhaven", max_results: int = 3) -> str:
-    """
-    Cerca asset 3D (texture, HDRI, modelli) via MCP `mcp_Blender`
-    (Polyhaven · Sketchfab · Hyper3D · Hunyuan3D).
-
-    Args:
-        keyword: Parola chiave ricerca (es. "casa italiana", "marmo bianco").
-        source: "polyhaven" (texture/HDRI free), "sketchfab" (modelli), "all".
-        max_results: Numero risultati (default 3).
-
-    Returns:
-        Anteprima lista asset trovati.
-    """
-    return (
-        f"🎨 Richiesta ricerca asset 3D: keyword='{keyword}' source='{source}' max={max_results}.\n\n"
-        "⚠️ MCP `mcp_Blender` non disponibile in questo ambiente.\n"
-        "Per abilitarlo e scaricare/applicare texture HDRI direttamente in Blender: "
-        "avvia ATLAS AI dove il server MCP Blender è connesso "
-        "(tool: search_polyhaven_assets, download_polyhaven_asset, set_texture, "
-        "search_sketchfab_models, generate_hyper3d_model_via_text, generate_hunyuan3d_model...)."
-    )
-
-
-# =====================================================================
-#  5 — mcp_testsprite: QA & Test auto
-# =====================================================================
-
-def mcp_qa_generate_tests(kind: str, target_path_or_url: str) -> str:
-    """
-    Genera automaticamente piani di test (PRD, test plan unitari/integrativi/e2e)
-    e codice eseguibile (pytest / Playwright) per un modulo specifico.
-
-    Args:
-        kind: Tipo di artefatto richiesto: "prd" · "frontend_test_plan" ·
-              "backend_test_plan" · "generate_code_and_execute".
-        target_path_or_url: Percorso file locale (backend/main.py) o URL dell'app.
-    """
-    kinds_valid = {"prd", "frontend_test_plan", "backend_test_plan", "generate_code_and_execute"}
-    if kind not in kinds_valid:
-        return f"❌ Tipo `{kind}` non valido. Usare uno tra: {sorted(kinds_valid)}."
-    return (
-        f"🧪 Richiesta QA MCP TestSprite: kind='{kind}' target='{target_path_or_url}'.\n\n"
-        "⚠️ MCP `mcp_testsprite` non attivo.\n"
-        "Quando il server è disponibile nel runtime ATLAS puoi usare: "
-        "testsprite_generate_standardized_prd, testsprite_generate_frontend_test_plan, "
-        "testsprite_generate_backend_test_plan, testsprite_generate_code_and_execute, "
-        "e visualizzare il risultato nel dashboard: testsprite_open_test_result_dashboard."
-    )
-
-
-# =====================================================================
-#  6 — Helpers di disponibilità (utili a LLM per introspezione)
-# =====================================================================
-
-def mcp_elenca_server_disponibili() -> str:
-    """
-    Elenca tutti i server MCP integrati nella piattaforma ATLAS AI,
-    con un breve sommario di cosa offre ciascuno.
-    """
-    rows = [
-        ("mcp_Multi_Fetch", "Fetch web resilientissimo (HTML/JSON/Markdown/TXT)"),
-        ("mcp_GitHub", "Lettura/Scrittura repo, PR, issues, search code"),
-        ("integrated_browser", "Browser interattivo, click, screenshot, evaluate"),
-        ("mcp_Playwright", "Automazione headless multi-browser, e2e test"),
-        ("mcp_Chrome_DevTools_MCP", "Lighthouse, performance, rete, console, heap"),
-        ("mcp_Blender", "Asset 3D (Polyhaven, Sketchfab, Hyper3D, Hunyuan3D)"),
-        ("mcp_testsprite", "QA: PRD auto, test plan, pytest + e2e + dashboard"),
-    ]
-    lines = [
-        "🧭 Server MCP integrati nella piattaforma **ATLAS AI v3.0**:",
-        "",
-    ]
-    for name, desc in rows:
-        lines.append(f"- **{name}** — {desc}")
-    lines.append("")
-    lines.append(
-        "Se un server è contrassegnato come non disponibile nella risposta dei tool,"
-        " significa che il runtime corrente non lo ha attivato: riavvia ATLAS AI nel"
-        " workspace TRAE dove i server MCP sono abilitati per sbloccare tutte le funzionalità."
-    )
-    return "\n".join(lines)
+        return "\n\n".join(righe)
+    except requests.RequestException as exc:
+        log.warning("mcp_github_search_repositories %s: %s", query, exc)
+        return f"⚠️ Errore GitHub: {exc}"
 
 
 __all__ = [
+    "MCPError",
+    "mcp_elenca_server",
+    "mcp_elenca_tool",
+    "mcp_chiama_tool",
     "mcp_web_fetch_markdown",
     "mcp_web_fetch_json",
     "mcp_github_get_file",
     "mcp_github_search_code",
     "mcp_github_search_repositories",
-    "mcp_browse_url",
-    "mcp_playwright_automate",
-    "mcp_blender_search_3d_assets",
-    "mcp_qa_generate_tests",
-    "mcp_elenca_server_disponibili",
 ]

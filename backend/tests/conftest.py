@@ -1,18 +1,20 @@
 """
 Configurazione pytest per ATLAS AI backend.
 
-Fornisce i principali fixtures:
-- client: TestClient FastAPI
-- monkey-patch verify_pin per accettare PIN hardcoded noti durante i test
-  (necessario perché DEFAULT_PROFILES ha hash bcrypt placeholder che non
-  corrispondono ai reali PIN, finché non si popola Supabase).
+Fixture principali:
+- `client`: TestClient FastAPI con lifespan attivo
+- `auth_headers`: header Authorization con token firmato reale
+- `_isolated_db`: sposta i file locale in una cartella temporanea (nessun
+  dato di sviluppo viene toccato dai test)
+
+I test usano i veri hash bcrypt dei PIN demo: nessun monkey-patch di
+`verify_pin`, così l'autenticazione viene provata davvero.
 """
 from __future__ import annotations
 
 import os
 import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,70 +25,64 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("LOG_LEVEL", "ERROR")
+os.environ["SCHEDULER_ENABLED"] = "false"
 os.environ.pop("SUPABASE_URL", None)
 os.environ.pop("SUPABASE_SERVICE_KEY", None)
-
-# ---------------------------------------------------------------
-# Mapping noto PIN -> slug profilo. Usato solo nei test per
-# simulare verify_pin senza bcrypt hash reali in DEFAULT_PROFILES.
-# ---------------------------------------------------------------
-_KNOWN_PIN: dict[str, str] = {
-    "0000": "io",
-    "1111": "mamma",
-    "2222": "papa",
-    "3333": "fratello1",
-    "4444": "fratello2",
-}
-
-
-def _patched_verify_pin(pin: str, hashed: Any) -> bool:
-    """Verify_pin alternativo per TEST -> usa mapping noto se hash è placeholder.
-
-    Permette di far funzionare /auth/pin nei test senza dover generare
-    veri bcrypt hash nei DEFAULT_PROFILES (che sono placeholder per
-    sicurezza fuori ambiente di test).
-    """
-    if not pin or not hashed:
-        return False
-    if isinstance(hashed, str) and pin in _KNOWN_PIN:
-        # Controllo incrociato tramite DEFAULT_PROFILES slug lookup
-        try:
-            from app.core.database import DEFAULT_PROFILES
-
-            slug = _KNOWN_PIN[pin]
-            expected = DEFAULT_PROFILES.get(slug, {}).get("pin_hash")
-            if expected and expected == hashed:
-                return True
-            # Fallback: se il profilo non ha ancora un pin_hash valido,
-            # accetta comunque il PIN noto (utile in fase di avvio locale)
-            if expected and hashed and expected == hashed:
-                return True
-            return True  # semplificazione test: PIN noto = sempre OK
-        except Exception:
-            return pin in _KNOWN_PIN
-    return False
+os.environ.pop("SUPABASE_SERVICE_ROLE_KEY", None)
+os.environ.pop("GOOGLE_API_KEY_1", None)
+os.environ.pop("GEMINI_KEY_1", None)
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _patch_verify_pin():
-    """Patch globale di security.verify_pin per tutta la sessione di test."""
-    from app.core import security as sec_mod
+def _isolated_db(tmp_path_factory):
+    """Isola il database locale dei test in una directory temporanea."""
+    from app.core import database
 
-    orig = sec_mod.verify_pin
-    sec_mod.verify_pin = _patched_verify_pin  # type: ignore[assignment]
-    yield
-    sec_mod.verify_pin = orig  # type: ignore[assignment]
+    temp_dir = tmp_path_factory.mktemp("local_db")
+    original = database.LOCAL_DB_DIR
+    database.LOCAL_DB_DIR = temp_dir
+    yield temp_dir
+    database.LOCAL_DB_DIR = original
 
 
 @pytest.fixture(scope="session")
 def _app():
-    from main import app  # import dopo env override e patch
+    from main import app
 
     return app
 
 
+@pytest.fixture(scope="session")
+def _limiter():
+    from main import limiter
+
+    return limiter
+
+
+@pytest.fixture(scope="session")
+def auth_token() -> str:
+    from app.core.security import create_access_token
+
+    return create_access_token("io")
+
+
+@pytest.fixture
+def auth_headers(auth_token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {auth_token}"}
+
+
 @pytest.fixture
 def client(_app):
-    """TestClient FastAPI (scope function per isolare i rate limiter)."""
-    with TestClient(_app, raise_server_exceptions=True) as tc:
-        yield tc
+    """TestClient FastAPI (nuovo contesto per isolare lifespan e stato)."""
+    with TestClient(_app, raise_server_exceptions=True) as test_client:
+        yield test_client
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter(_limiter):
+    """Evita che i test si influenzino a vicenda sul rate limiting."""
+    try:
+        _limiter.reset()
+    except Exception:
+        pass
+    yield

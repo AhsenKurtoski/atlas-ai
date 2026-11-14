@@ -1,8 +1,8 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ProfileScreen from './src/screens/ProfileScreen';
 import HomeScreen from './src/screens/HomeScreen';
@@ -11,13 +11,30 @@ import ItalianoScreen from './src/screens/ItalianoScreen';
 import BudgetScreen from './src/screens/BudgetScreen';
 import IntegrationsScreen from './src/screens/IntegrationsScreen';
 import CONFIG from './src/config';
+import apiService, { ApiError } from './src/services/api';
+import {
+  configureNotifications,
+  registerPushToken,
+  syncLocalReminders,
+  unregisterPushToken,
+  cancelLocalReminders,
+} from './src/services/notifications';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
+export interface ProfileInfo {
+  slug: string;
+  nome: string;
+  lingua_madre: string;
+  livello_italiano: string;
+}
+
 export interface AuthContextValue {
   authToken: string | null;
   profileId: string | null;
+  profile: ProfileInfo | null;
+  ready: boolean;
   setAuth: (token: string | null, profileId: string | null) => Promise<void>;
   clearAuth: () => Promise<void>;
 }
@@ -25,6 +42,8 @@ export interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue>({
   authToken: null,
   profileId: null,
+  profile: null,
+  ready: false,
   setAuth: async () => {},
   clearAuth: async () => {},
 });
@@ -41,8 +60,10 @@ function TabIcon({ icon, focused }: { icon: string; focused: boolean }) {
   );
 }
 
-function MainTabs({ route }: any) {
-  const { profileId } = route.params;
+function MainTabs() {
+  // Il profilo arriva dal contesto di autenticazione: funziona anche quando la
+  // sessione viene ripristinata all'avvio senza parametri di navigazione.
+  const { profileId, profile } = useAuth();
 
   return (
     <Tab.Navigator
@@ -82,7 +103,7 @@ function MainTabs({ route }: any) {
       <Tab.Screen
         name="Italiano"
         component={ItalianoScreen}
-        initialParams={{ profileLevel: profileId === 'papa' ? 'A2' : 'B1' }}
+        initialParams={{ profileLevel: profile?.livello_italiano ?? 'B1' }}
         options={{
           tabBarIcon: ({ focused }) => <TabIcon icon="🇮🇹" focused={focused} />,
           tabBarLabel: 'Italiano',
@@ -109,50 +130,157 @@ function MainTabs({ route }: any) {
   );
 }
 
+async function loadProfileInfo(slug: string, token: string): Promise<ProfileInfo | null> {
+  try {
+    const me = await apiService.me(token);
+    return {
+      slug: me.slug,
+      nome: me.nome,
+      lingua_madre: me.lingua_madre,
+      livello_italiano: me.livello_italiano,
+    };
+  } catch (error) {
+    // Token scaduto/revocato: il chiamante deve riportare l'utente al login.
+    if (error instanceof ApiError && error.status === 401) {
+      throw error;
+    }
+    // Offline: usiamo l'ultima info salvata, se disponibile.
+    try {
+      const raw = await AsyncStorage.getItem(CONFIG.STORAGE_PROFILE_INFO_KEY);
+      if (raw) {
+        const cached = JSON.parse(raw) as ProfileInfo;
+        if (cached?.slug === slug) return cached;
+      }
+    } catch {
+      // nessuna cache
+    }
+    return null;
+  }
+}
+
 export default function App() {
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [profile, setProfile] = useState<ProfileInfo | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    configureNotifications();
+  }, []);
+
+  // Ripristino sessione: il token viene validato dal backend prima di entrare.
+  useEffect(() => {
     (async () => {
       try {
-        const [t, p] = await Promise.all([
+        const [storedToken, storedProfile] = await Promise.all([
           AsyncStorage.getItem(CONFIG.STORAGE_AUTH_TOKEN_KEY),
           AsyncStorage.getItem(CONFIG.STORAGE_PROFILE_KEY),
         ]);
-        setAuthToken(t);
-        setProfileId(p);
+        if (!storedToken || !storedProfile) {
+          return;
+        }
+        const info = await loadProfileInfo(storedProfile, storedToken);
+        setAuthToken(storedToken);
+        setProfileId(storedProfile);
+        setProfile(
+          info ?? {
+            slug: storedProfile,
+            nome: storedProfile,
+            lingua_madre: 'Italiano',
+            livello_italiano: 'B1',
+          }
+        );
+      } catch (error) {
+        // Token non più valido: puliamo la sessione salvata e mostriamo i profili.
+        if (error instanceof ApiError && error.status === 401) {
+          await AsyncStorage.multiRemove([
+            CONFIG.STORAGE_AUTH_TOKEN_KEY,
+            CONFIG.STORAGE_PROFILE_KEY,
+            CONFIG.STORAGE_PROFILE_INFO_KEY,
+          ]).catch(() => {});
+        }
       } finally {
         setReady(true);
       }
     })();
   }, []);
 
-  const setAuth = async (token: string | null, profile: string | null) => {
+  const persistProfile = async (slug: string, token: string) => {
+    const info = await loadProfileInfo(slug, token);
+    setProfile(info);
+    if (info) {
+      await AsyncStorage.setItem(CONFIG.STORAGE_PROFILE_INFO_KEY, JSON.stringify(info));
+    }
+    // Notifiche: push remote (se configurate) + promemoria locali sempre attivi.
+    registerPushToken(slug).catch(() => {});
+    syncLocalReminders(true).catch(() => {});
+  };
+
+  const setAuth = useCallback(async (token: string | null, slug: string | null) => {
     setAuthToken(token);
-    setProfileId(profile);
-    const tasks: Promise<void>[] = [];
+    setProfileId(slug);
+    const tasks: Promise<unknown>[] = [];
     if (token) tasks.push(AsyncStorage.setItem(CONFIG.STORAGE_AUTH_TOKEN_KEY, token));
     else tasks.push(AsyncStorage.removeItem(CONFIG.STORAGE_AUTH_TOKEN_KEY));
-    if (profile) tasks.push(AsyncStorage.setItem(CONFIG.STORAGE_PROFILE_KEY, profile));
+    if (slug) tasks.push(AsyncStorage.setItem(CONFIG.STORAGE_PROFILE_KEY, slug));
     else tasks.push(AsyncStorage.removeItem(CONFIG.STORAGE_PROFILE_KEY));
     await Promise.all(tasks);
-  };
 
-  const clearAuth = async () => {
+    if (token && slug) {
+      await persistProfile(slug, token);
+    }
+  }, []);
+
+  const clearAuth = useCallback(async () => {
+    // Revoca la sessione e disattiva il push PRIMA di cancellare le credenziali:
+    // le richieste HTTP leggono il token da AsyncStorage.
+    try {
+      await apiService.logout();
+    } catch {
+      // Offline: il token scadrà comunque.
+    }
+    await unregisterPushToken();
+    await cancelLocalReminders();
+
     setAuthToken(null);
     setProfileId(null);
-    await AsyncStorage.multiRemove([CONFIG.STORAGE_AUTH_TOKEN_KEY, CONFIG.STORAGE_PROFILE_KEY]);
-  };
+    setProfile(null);
+    await AsyncStorage.multiRemove([
+      CONFIG.STORAGE_AUTH_TOKEN_KEY,
+      CONFIG.STORAGE_PROFILE_KEY,
+      CONFIG.STORAGE_PROFILE_INFO_KEY,
+    ]);
+  }, []);
+
+  // Sessione scaduta durante l'uso: si torna automaticamente ai profili.
+  useEffect(() => {
+    apiService.setUnauthorizedHandler(() => {
+      clearAuth().catch(() => {});
+    });
+    return () => apiService.setUnauthorizedHandler(null);
+  }, [clearAuth]);
+
+  const authenticated = Boolean(authToken && profileId);
 
   return (
-    <AuthContext.Provider value={{ authToken, profileId, setAuth, clearAuth }}>
+    <AuthContext.Provider
+      value={{ authToken, profileId, profile, ready, setAuth, clearAuth }}
+    >
       <NavigationContainer>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="Profile" component={ProfileScreen} />
-          <Stack.Screen name="Main" component={MainTabs} />
-        </Stack.Navigator>
+        {!ready ? (
+          <View style={{ flex: 1, backgroundColor: '#0a0a0f', alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator color="#7c3aed" size="large" />
+            <Text style={{ color: '#8888a0', marginTop: 16, fontWeight: '700' }}>ATLAS AI</Text>
+          </View>
+        ) : (
+          <Stack.Navigator screenOptions={{ headerShown: false }}>
+            {authenticated ? (
+              <Stack.Screen name="Main" component={MainTabs} />
+            ) : (
+              <Stack.Screen name="Profile" component={ProfileScreen} />
+            )}
+          </Stack.Navigator>
+        )}
       </NavigationContainer>
     </AuthContext.Provider>
   );

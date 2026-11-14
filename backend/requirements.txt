@@ -1,34 +1,29 @@
 # ==========================================================
-#  ATLAS AI v3.0 - Backend Dependencies (Python 3.11+)
-#  Tutte le versioni sono state verificate stabili al
-#  momento della generazione. Usa `pip install -r requirements.txt`
-#  all'interno di un venv attivo.
+#  ATLAS AI v3.0 - Backend Dependencies (Python 3.11 - 3.13)
+#  Versioni verificate compatibili tra loro (pip check pulito).
+#  Installazione: pip install -r requirements.txt dentro un venv.
 # ==========================================================
 
 # --- Framework web e ASGI ---
-fastapi==0.115.0
+fastapi==0.115.14
 uvicorn[standard]==0.30.6
-pydantic==2.9.2
-pydantic-settings==2.5.2
+pydantic==2.14.3
+pydantic-settings==2.10.1
 
 # --- Rate limiting & sicurezza ---
 slowapi==0.1.9
 limits==3.13.0
 python-multipart==0.0.9
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
 bcrypt==4.2.0
 
 # --- Supabase (Postgres + Auth + Storage) ---
-supabase==2.5.1
+supabase==2.34.1
 
-# --- Google Generative AI (Gemini) [NUOVA VERSIONE UNIFICATA] ---
-google-generativeai==0.8.3
+# --- Google Gemini (SDK unificato, usato da app/ai_router.py) ---
 google-genai==2.14.0
 
 # --- Servizi esterni / API client ---
 requests==2.32.3
-requests-cache==1.2.1
 beautifulsoup4==4.12.3
 lxml==5.3.0
 duckduckgo-search==6.3.0
@@ -38,19 +33,18 @@ wikipedia==1.4.0
 APScheduler==3.10.4
 pytz==2024.1
 
-# --- Firebase Push Notifications ---
+# --- Firebase Push Notifications (opzionale: solo per token FCM nativi) ---
 firebase-admin==6.5.0
 
-# --- Logging strutturato ---
-structlog==24.4.0
+# --- Browser agent (Chromium headless) ---
+# Dopo pip install: python -m playwright install chromium
+playwright==1.65.2
+
+# --- Config & Logging ---
 python-dotenv==1.0.1
 
 # --- Qualità codice & Test ---
 pytest==8.3.3
 pytest-asyncio==0.24.0
 pytest-cov==5.0.0
-httpx==0.27.2
-ruff==0.6.8
-mypy==1.11.2
-types-requests==2.32.0.20240914
-types-python-dateutil==2.9.0.20240906
+httpx==0.28.1

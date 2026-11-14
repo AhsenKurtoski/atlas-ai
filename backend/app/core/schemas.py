@@ -1,12 +1,14 @@
 """
-Modello di dati (Pydantic v2) per richieste e risposte dell'API ATLAS.
+Modelli di dati (Pydantic v2) per richieste e risposte dell'API ATLAS.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.core.security import is_safe_numeric_pin
 
 
 # ---------------- Auth ----------------
@@ -16,24 +18,40 @@ class PinAuthRequest(BaseModel):
 
     @field_validator("pin")
     @classmethod
-    def _pin_must_be_digits(cls, v: str) -> str:
-        if not v.isdigit():
-            raise ValueError("PIN deve essere numerico")
-        return v
+    def _pin_must_be_digits(cls, value: str) -> str:
+        if not is_safe_numeric_pin(value):
+            raise ValueError("Il PIN deve contenere solo cifre (4-8)")
+        return value
 
 
 class PinAuthResponse(BaseModel):
     auth: bool
     profilo: Optional[str] = None
+    slug: Optional[str] = None
     token: Optional[str] = None
+    expires_in: Optional[int] = None
     message: Optional[str] = None
+
+
+class MeResponse(BaseModel):
+    slug: str
+    nome: str
+    lingua_madre: str
+    livello_italiano: str
+    expires_at: Optional[int] = None
 
 
 # ---------------- Chat ----------------
 class ChatRequest(BaseModel):
     msg: str = Field(..., min_length=1, max_length=8000, description="Messaggio dell'utente")
-    profilo: str = Field(..., min_length=1, max_length=50, description="Slug profilo che scrive il messaggio")
-    token: Optional[str] = Field(default=None, description="Token di autenticazione rilasciato da /auth/pin")
+    profilo: Optional[str] = Field(default=None, max_length=50, description="Ignorato: il profilo arriva dal token")
+    token: Optional[str] = Field(default=None, description="Deprecato: usa l'header Authorization")
+    immagine_base64: Optional[str] = Field(
+        default=None,
+        max_length=15_000_000,
+        description="Foto dalla galleria in base64 (max ~10 MB reali)",
+    )
+    immagine_mime_type: Optional[str] = Field(default=None, max_length=80)
 
 
 class ChatResponse(BaseModel):
@@ -42,21 +60,43 @@ class ChatResponse(BaseModel):
     latency_ms: Optional[float] = None
 
 
+class TranscriptionRequest(BaseModel):
+    audio_base64: str = Field(..., min_length=32, max_length=14_000_000)
+    mime_type: str = Field(default="audio/mp4", max_length=80)
+
+
+class TranscriptionResponse(BaseModel):
+    testo: str
+    disponibile: bool = True
+
+
 # ---------------- Profili ----------------
 class ProfileSummary(BaseModel):
     nome: str
     livello_italiano: str
+    lingua_madre: str = "Italiano"
 
 
-class ProfilesResponse(BaseModel):
-    profili: dict[str, ProfileSummary]
+class CreateProfileRequest(BaseModel):
+    nome: str = Field(..., min_length=1, max_length=100)
+    pin: str = Field(..., min_length=4, max_length=8)
+    slug: Optional[str] = Field(default=None, max_length=50)
+    lingua_madre: str = Field(default="Italiano", max_length=50)
+    livello_italiano: str = Field(default="B1", max_length=20)
+
+    @field_validator("pin")
+    @classmethod
+    def _pin_must_be_digits(cls, value: str) -> str:
+        if not is_safe_numeric_pin(value):
+            raise ValueError("Il PIN deve contenere solo cifre (4-8)")
+        return value
 
 
 # ---------------- Todo / Lista spesa ----------------
 class AddTodoRequest(BaseModel):
     task: str = Field(..., min_length=1, max_length=500)
     assegnato_a: str = Field(default="Tutti", max_length=100)
-    slug: str = Field(..., max_length=50, description="Profilo che aggiunge il todo")
+    slug: Optional[str] = Field(default=None, max_length=50, description="Ignorato: arriva dal token")
 
 
 class TodoItem(BaseModel):
@@ -72,7 +112,7 @@ class AddSpesaRequest(BaseModel):
     importo: float = Field(..., gt=0, lt=10_000_000)
     categoria: str = Field(..., min_length=1, max_length=50)
     descrizione: str = Field(default="", max_length=500)
-    slug: str = Field(..., max_length=50, description="Profilo che registra la spesa")
+    slug: Optional[str] = Field(default=None, max_length=50, description="Ignorato: arriva dal token")
 
 
 class BudgetRow(BaseModel):
@@ -84,6 +124,36 @@ class BudgetRow(BaseModel):
 class BudgetRiepilogo(BaseModel):
     totale: float
     dettaglio: list[BudgetRow] = []
+
+
+# ---------------- Notifiche ----------------
+class PushRegisterRequest(BaseModel):
+    token: str = Field(..., min_length=8, max_length=255)
+    device: str = Field(default="", max_length=200)
+    platform: str = Field(default="", max_length=20)
+
+
+class PushTestRequest(BaseModel):
+    titolo: str = Field(default="Test ATLAS", max_length=80)
+    messaggio: str = Field(default="Le notifiche funzionano! 🎉", max_length=300)
+
+
+# ---------------- Impostazioni ----------------
+class SettingsUpdateRequest(BaseModel):
+    automazioni: Optional[dict[str, bool]] = None
+    notifiche: Optional[dict[str, bool]] = None
+    soglie: Optional[dict[str, float]] = None
+
+
+# ---------------- Italiano ----------------
+class QuizAnswer(BaseModel):
+    id: str = Field(..., max_length=40)
+    scelta: int = Field(..., ge=0, le=3)
+
+
+class QuizSubmitRequest(BaseModel):
+    risposte: list[QuizAnswer] = Field(..., max_length=20)
+    livello: Optional[str] = Field(default="B1", max_length=5)
 
 
 # ---------------- Generiche ----------------
@@ -99,6 +169,12 @@ class HealthResponse(BaseModel):
     status: Literal["ok", "degraded", "error"]
     profili: int
     automazioni: int
+    scheduler_attivo: bool = False
     ambiente: str
     versione: str = "3.0.0"
-    uptime_iso: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    db_mode: str = "locale"
+    notifiche: str = "expo"
+    llm: bool = False
+    uptime_iso: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    )

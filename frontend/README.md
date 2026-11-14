@@ -6,190 +6,191 @@ Expo SDK 51 · React Native 0.74 · TypeScript strict · NativeWind (Tailwind 3.
 
 ## 📋 Prerequisiti
 
-- **Node.js 20+** (consigliato LTS)
-- `npm` o `pnpm` / `yarn`
-- *Opzionale*: [Expo Go](https://expo.dev/go) installato su dispositivo iOS/Android (per test reali)
-- *Opzionale*: Android Studio (emulatore) o Xcode (simulatore iOS)
+- **Node.js 20+**
+- `npm`
+- *Opzionale*: [Expo Go](https://expo.dev/go) su iOS/Android per provare l'app
+- *Opzionale*: Android Studio / Xcode per build native
+- Backend ATLAS raggiungibile (vedi `backend/README.md`), con Chromium installato per l'agente browser
 
 ---
 
-## 🏁 Installazione & Avvio
+## 🏁 Installazione & avvio
 
 ```bash
 cd frontend
-
-# 1. Installa dipendenze
 npm install
-# oppure:  pnpm install / yarn install
-
-# 2. Avvia bundler Metro
 npx expo start
-
-#    Alternative:
-npx expo start --android   # Apri emulatore Android
-npx expo start --ios       # Apri simulatore iOS (solo macOS)
-npx expo start --web       # Preview web per test veloci
 ```
-
-✅ Sul dispositivo con **Expo Go**: scansiona il QR code mostrato nel terminale.
-
----
-
-## 🔐 Configurazione URL backend (3 livelli fallback)
-
-L'URL del backend è risolto **dinamicamente** in [src/config.ts](src/config.ts) — nessun hardcode:
-
-| Priorità | Fonte | Esempio | Quando si usa |
-|---|---|---|---|
-| 1 (ALTA) | `EXPO_PUBLIC_API_URL` | `https://api.atlas.miodominio.it` | Build production/staging |
-| 2 | `Constants.expoConfig.hostUri` (Expo Go) | `http://192.168.1.123:8081` → porta 8000 | Sviluppo locale su WiFi (stessa rete) |
-| 3 | Default hardcoded | `http://localhost:8000` | Emulatore Android (con `adb reverse`) o simulatori iOS |
-
-```bash
-# Build production: forzare backend remoto
-EXPO_PUBLIC_API_URL=https://api.atlas.miodominio.it npx expo start
-```
-
----
-
-## 🧩 Architettura frontend
-
-```
-App.tsx (Root)
-├── <AuthProvider> (AuthContext + AsyncStorage persistence)
-│   └── <NavigationContainer>
-│       ├── Root Stack Navigator
-│       │   ├── "Auth"            ← PIN verification via apiService.verifyPin()
-│       │   └── "Main" (Bottom Tabs)
-│       │       ├── HomeScreen     (dashboard, stato backend, todos preview)
-│       │       ├── ChatScreen     (AI chat con cronologia persistente, Markdown)
-│       │       ├── TodosScreen    (CRUD todos via backend /todos)
-│       │       ├── BudgetScreen   (spese + riepilogo per categoria /budget)
-│       │       └── ProfileScreen  (switch profilo, logout, versione app)
-│       └── * Auth flow auto-redirect se token mancante
-│
-src/services/api.ts        # ApiService singleton · 15s timeout · Bearer token auto
-src/config.ts              # URL dinamico + costanti app
-shims.d.ts                 # AsyncStorage stub + assets modules (typecheck friendly)
-nativewind-env.d.ts        # className props su View/Text/... (NativeWind)
-```
-
----
-
-## 🔑 Flusso autenticazione
-
-```mermaid
-sequenceDiagram
-    actor Utente
-    participant App as App.tsx AuthContext
-    participant BE as Backend /auth/pin
-    participant AS as AsyncStorage
-
-    Utente->>App: Seleziona profilo + inserisce PIN
-    App->>BE: POST /auth/pin  { profile_slug, pin }
-    alt PIN corretto (auth:true + token)
-        BE-->>App: 200 { auth:true, token: "<hex 64 char>" }
-        App->>AS: setItem("@atlas/auth_token" + "@atlas/profile_id")
-        App->>App: setAuth(token, profileId)
-        App->>Utente: Naviga → Main (Bottom Tabs)
-    else PIN errato / rate limit
-        BE-->>App: 401 { auth:false, message }  o  429 RateLimitExceeded
-        App->>Utente: Alert "PIN errato" o "Troppi tentativi, riprova tra 1 min"
-    end
-```
-
-Tutti gli screens nel Tab **Main** ricevono `profileId` + usano `useAuth()` hook per `authToken`.
-
----
-
-## 🛠️ Comandi utili
 
 | Comando | Cosa fa |
 |---|---|
-| `npm run start` | Avvia Expo bundler (alias `npx expo start`) |
-| `npm run android` | Avvia su emulatore Android |
-| `npm run ios` | Avvia simulatore iOS (solo macOS) |
-| `npm run web` | Preview web browser |
-| `npm run typecheck` | ✅ `tsc --noEmit` · **strict mode** |
-| `npm run lint` | ESLint (se configurato) |
-| `npm run build:web` | Build statica web (preview) |
+| `npm run start` | Bundler Metro + QR code |
+| `npm run android` | Emulatore Android |
+| `npm run ios` | Simulatore iOS (solo macOS) |
+| `npm run typecheck` | `tsc --noEmit` (strict) |
 
 ---
 
-## 🧪 Qualità & TypeScript
+## 🔐 Configurazione URL backend
 
-La configurazione `tsconfig.json` usa **`strict: true`** (massima sicurezza tipi):
+Risolto in `src/config.ts`, in ordine:
 
-```bash
-# Verifica statica (eseguito anche in CI)
-npm run typecheck
-
-# Stato attuale: 0 errori ✅
-```
-
-Sono stati creati 2 file di supporto per il typecheck:
-1. **`shims.d.ts`** — dichiara moduli assets (`*.png`, `*.svg`…) e stub tipizzato per `@react-native-async-storage/async-storage`
-2. **`nativewind-env.d.ts`** — estende `ViewProps / TextProps / ImageProps / ScrollViewProps / TouchableOpacityProps` con la proprietà opzionale `className` (tipizzato per NativeWind / Tailwind CSS).
-
----
-
-## 📱 Persistenza locale (AsyncStorage)
-
-| Chiave | Contenuto | TTL / Cancellazione |
+| Priorità | Fonte | Esempio |
 |---|---|---|
-| `@atlas/auth_token` | Bearer token ricevuto da `/auth/pin` | Cancellato al logout o dopo 8h (scadenza lato backend) |
-| `@atlas/profile_id` | Slug profilo attivo (`io`, `mamma`, ...) | Cancellato al logout |
-| `@atlas/history/${profileId}` | Array `[{role, text, timestamp, latencyMs}]` ultimo 150 messaggi chat | Cancellato con 🗑️ pulsante in ChatScreen |
-
-*Nota:* lato backend il token ha TTL 8h e viene salvato in dizionario in-memory (per produzione si suggerisce **Redis** o tabella Supabase `auth_tokens`).
-
----
-
-## 🚀 Produzione — Build con EAS
+| 1 | `EXPO_PUBLIC_API_URL` | `https://api.atlas.miodominio.it` |
+| 2 | IP LAN di Expo Go | `http://192.168.1.123:8000` |
+| 3 | Loopback | `http://10.0.2.2:8000` (emulatore Android) / `http://localhost:8000` |
 
 ```bash
-# 1. Installa EAS CLI una volta
-npm install -g eas-cli
-
-# 2. Login expo
-eas login
-
-# 3. Configura progetto (prima volta)
-eas build:configure
-
-# 4. Build preview Android (APK — per QA)
-eas build --platform android --profile preview
-
-# 5. Build produzione App Store / Play Store
-eas build --platform all --profile production
+# Backend su porta diversa o host remoto
+EXPO_PUBLIC_API_URL=http://192.168.1.50:8010 npx expo start
 ```
 
-File `eas.json` template (da creare se non presente):
-```json
-{
-  "build": {
-    "preview": {
-      "distribution": "internal",
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://staging-api.atlas.miodominio.it"
-      }
-    },
-    "production": {
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.atlas.miodominio.it"
-      }
-    }
-  }
-}
-```
+> Su un telefono fisico in Expo Go, PC e telefono devono stare sulla stessa rete Wi-Fi.
+> Se il backend usa HTTPS, aggiorna `EXPO_PUBLIC_API_URL` di conseguenza.
 
 ---
 
-## 🧭 Sviluppo — best practice
+## 🧩 Schermate
 
-1. **Mai hardcodare URL backend**: usa sempre `CONFIG.API_URL` da `src/config.ts`
-2. **Tutte le chiamate HTTP** → usa `apiService.<metodo>` singleton (gestisce timeout, errori, token Bearer automaticamente). Mai fare `fetch()` diretto.
-3. **Persistenza auth** → passa solo per `useAuth().setAuth()` / `.clearAuth()`.
-4. **Stili Tailwind** → usa `className` su qualunque componente RN; la tipizzazione è garantita dal file `nativewind-env.d.ts`.
-5. **Lunghezza massima PIN**: `CONFIG.MAX_PIN_LENGTH` (=4) — allineata al backend (4–8 cifre, PIN 4 cifre è il default UX).
-6. **Timeout chiamate**: 15 secondi condivisi; se l'operazione è più lunga (chat lunghi) è possibile override singolo passando `opts` a `_request()`.
+| Tab | Contenuto | Dati reali |
+|---|---|---|
+| **Profile** (auth) | Scelta profilo + PIN 4-8 cifre | `GET /profili`, `POST /auth/pin` |
+| **Home** | Stato backend, versione/DB, dispositivi push, lista attività | `/`, `/dashboard`, `/todos` |
+| **Chat** | Chat AI con Markdown, dettatura vocale, **foto dalla galleria**, **agente browser**, cronologia locale | `/chat`, `/chat/trascrivi` |
+| **Italiano** | Lezione del giorno, quiz con punteggio, classifica, roleplay | `/italiano/*` |
+| **Budget** | Spese per categoria + inserimento | `/budget`, `/budget/spesa` |
+| **Impostazioni** | Notifiche, automazioni, Gmail/Calendar, gestione profili (solo admin), logout | `/impostazioni`, `/integrazioni/google/*`, `/profili` |
+
+> **Agente browser**: la navigazione avviene interamente nel backend con Chromium
+> headless. L'app non richiede permessi aggiuntivi: basta chiedere in chat, ad esempio
+> «apri quel sito e cerca il treno». Cookie e pagine sono isolati per profilo e non
+> vengono salvati sul dispositivo. Dettagli in [`../docs/BROWSER.md`](../docs/BROWSER.md).
+
+---
+
+## 🔑 Autenticazione
+
+1. L'utente sceglie il profilo e inserisce il PIN.
+2. `POST /auth/pin` restituisce un token firmato (TTL 8h).
+3. Il token e il profilo vengono salvati in AsyncStorage; all'avvio l'app chiama
+   `GET /auth/me` per validare la sessione (se offline usa l'ultima info salvata).
+4. Qualsiasi risposta **401** fa tornare automaticamente alla schermata profili
+   (`ApiService.setUnauthorizedHandler`).
+5. Il logout (Impostazioni) **revoca il token sul server**, disattiva il token push, cancella i promemoria locali e infine la sessione salvata (in quest'ordine: le richieste leggono il token da AsyncStorage).
+
+### Ruoli
+
+- `io` è l'amministratore: solo lui vede “Aggiungi membro” e i pulsanti “Elimina”.
+- Gli altri profili usano l'app normalmente, ma non possono creare o rimuovere membri
+  (il backend risponde 403 anche se la richiesta viene inviata a mano).
+- Chat, punti italiano e push sono separati per profilo; todo, budget e impostazioni
+  sono condivisi dalla famiglia.
+
+---
+
+## 🔔 Notifiche
+
+- **Locali**: promemoria giornalieri pianificati con `expo-notifications`
+  (lezione 7:30, acqua 10:00/15:00/19:00). Funzionano senza backend.
+- **Remote push**: all'accesso l'app richiede il permesso e registra il token Expo
+  sul backend. Serve un `projectId` EAS in `app.json`:
+
+```bash
+npm install -g eas-cli
+eas login
+eas init          # scrive extra.eas.projectId in app.json
+```
+
+Senza `projectId` l'app lo segnala nelle Impostazioni e usa solo i promemoria locali
+(nessuna simulazione di push).
+
+Canale Android: `atlas_default` (importanza alta, colore `#7c3aed`).
+
+Per una **build standalone** le push Android richiedono anche le credenziali **FCM**
+caricate nel progetto Expo (EAS → Credentials); in Expo Go funzionano senza configurazione.
+Le push iOS richiedono la chiave APNs configurata su EAS.
+
+---
+
+## 🖼️ Foto dalla galleria
+
+1. Tocca 🖼️ accanto al campo messaggio: si apre la galleria di sistema.
+2. La foto viene mostrata in anteprima; puoi rimuoverla con ✕ o aggiungere una didascalia.
+3. Al invio viene compressa in JPEG (`quality 0.65`) e inviata a `POST /chat` in base64.
+4. ATLAS la analizza con Gemini (descrizione, OCR di documenti/ricette/cartelli) e risponde.
+
+Permessi: iOS `NSPhotoLibraryUsageDescription`, Android photo picker di sistema. Se il
+permesso è negato l'app spiega come attivarlo; se la foto supera ~10 MB chiede di
+sceglierne una più piccola. La foto non viene salvata nella cronologia locale (solo il testo).
+
+## 🎤 Dettatura vocale
+
+1. Tieni premuto il microfono in Chat (permesso microfono richiesto).
+2. Al rilascio l'audio viene letto in base64 e inviato a `POST /chat/trascrivi`.
+3. Gemini trascrive e il testo viene inserito nel campo messaggio.
+
+Se il backend non ha chiavi Gemini, l'app mostra l'errore reale e non inventa un testo.
+
+---
+
+## 📱 Persistenza locale
+
+| Chiave | Contenuto |
+|---|---|
+| `@atlas/auth_token` | Token di sessione |
+| `@atlas/profile` | Slug profilo attivo |
+| `@atlas/profile_info` | Nome, lingua, livello (cache offline) |
+| `@atlas/history/<slug>` | Ultimi messaggi chat |
+| `@atlas/push_token` | Token Expo del dispositivo |
+| `@atlas/local_notifications` | ID dei promemoria pianificati |
+
+Nessun dato sensibile (PIN, chiavi API) viene salvato sul dispositivo.
+
+---
+
+## 🚀 Build Android / iOS
+
+Identificativi già configurati in `app.json`:
+
+- iOS bundle identifier: `com.atlasai.family`
+- Android package: `com.atlasai.family`
+- Deep link scheme: `atlasai://` (ritorno OAuth)
+- Permessi: microfono, notifiche, vibrazione
+- Plugin: `expo-notifications`
+
+```bash
+npm install -g eas-cli
+eas login
+eas init                     # genera projectId (necessario per le push)
+eas build --platform android --profile preview
+eas build --platform ios --profile production
+```
+
+Imposta `EXPO_PUBLIC_API_URL` nel profilo EAS (`eas.json`) con l'URL HTTPS del backend.
+
+---
+
+## 🧪 Verifica
+
+```bash
+npm run typecheck                                        # 0 errori
+npx expo export --platform android --output-dir .export   # bundle Android
+npx expo export --platform ios --output-dir .export-ios   # bundle iOS
+```
+
+Le build di verifica non richiedono account a pagamento.
+
+Dopo l'aggiunta di `expo-image-picker` serve una nuova development build per testare la
+galleria su device fisico: **Expo Go include già il modulo**, mentre una build precedente
+non lo contiene. Per un backend in HTTP sulla LAN usa Expo Go in sviluppo; per una build
+standalone pubblica il backend in **HTTPS** (iOS ATS e Android cleartext bloccano HTTP).
+
+---
+
+## ℹ️ Note
+
+- Le notifiche push remote in **Expo Go** hanno limitazioni: per un test completo usa una
+  development build (`eas build --profile development`).
+- La preview web non è un target di prodotto: l'app è progettata per iOS/Android.
+- `expo-blur` è presente tra le dipendenze ma non è usato dalle schermate attuali.

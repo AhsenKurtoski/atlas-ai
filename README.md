@@ -1,59 +1,71 @@
 # 🧠 ATLAS AI v3.0
 
-Assistente Intelligenza Artificiale **family-first** con backend Python/FastAPI + frontend mobile React Native (Expo).
+Assistente AI **family-first** con backend Python/FastAPI + app mobile React Native (Expo).
 
-> Progettato per **famiglie italiane**: AI conversazionale multi-utente con autenticazione PIN, gestione profili, liste todo, budget familiare, automazioni pianificate (scheduler APScheduler), e integrazione con LLM Gemini (function calling nativo).
+> Pensato per famiglie italiane: chat AI multi-utente con accesso PIN, profili famiglia,
+> liste condivise, budget, automazioni pianificate con notifiche push, lezioni di italiano,
+> integrazione reale con Gmail/Calendar e server MCP, e un **agente browser Chromium**
+> che apre siti, clicca, compila moduli e legge pagine dinamiche.
+
+**Licenza MIT** · CI su GitHub Actions · 141 test backend · TypeScript strict a 0 errori
 
 ---
 
-## 🏗️ Architettura generale
+## 🏗️ Architettura
 
 ```
 ┌──────────────────────────────┐      HTTP / JSON       ┌─────────────────────────────────────────┐
-│   FRONTEND MOBILE            │ ─────────────────────▶ │  BACKEND FASTAPI (Python 3.11+)         │
-│   React Native · Expo 51     │  Bearer token + CORS   │                                         │
-│   NativeWind / Tailwind      │ ◀───────────────────── │  - 9 endpoints REST                     │
-│   AsyncStorage (persistenza) │  Chat streaming +      │  - Router AI con Gemini function calling│
-│   React Navigation 6.x       │  Messaggi strutturati  │  - Auth PIN (bcrypt) + Rate Limit 5/min │
-│   Bottom Tabs + Auth Stack   │                       │  - 8 automazioni (cron + interval)      │
-└──────────────────────────────┘                       │  - DB: Supabase ▶ fallback JSON locale  │
-                                                       │  - Scheduler APScheduler (singleton)    │
-                                                       │  - Tools: calcolatrice AST · todos      │
-                                                       │           budget · geoutils · web search │
-                                                       └─────────────────────────────────────────┘
+│   APP MOBILE                 │ ─────────────────────▶ │  BACKEND FASTAPI (Python 3.11-3.13)     │
+│   React Native · Expo 51     │  Bearer token firmato  │                                         │
+│   NativeWind / Tailwind      │ ◀───────────────────── │  - 30 endpoint REST                     │
+│   AsyncStorage (persistenza) │   Chat + Pin + Push    │  - 45 tool reali per Gemini             │
+│   React Navigation 6         │                        │  - 8 tool browser (Chromium headless)   │
+│   expo-notifications         │                        │  - Auth PIN bcrypt + token HMAC 8h      │
+└──────────────────────────────┘                        │  - 11 automazioni APScheduler           │
+                                                        │  - DB: Supabase ▶ fallback JSON locale  │
+                                                        │  - Client MCP (JSON-RPC/HTTP)           │
+                                                        └─────────────────────────────────────────┘
                                                                       │
                                                                       ▼
-                                           ┌──────────────────────────────────┐
-                                           │  SERVIZI ESTERNI (opzionali)     │
-                                           │  · Supabase / Postgres            │
-                                           │  · Google Gemini 2.0 Flash (x3)   │
-                                           │  · DuckDuckGo Search · Wikipedia  │
-                                           │  · News API · Meteo / IP geoloc   │
-                                           └──────────────────────────────────┘
+                                        ┌────────────────────────────────────────────────┐
+                                        │  SERVIZI GRATUITI (nessun costo obbligatorio)  │
+                                        │  Google Gemini · Expo Push · Open-Meteo        │
+                                        │  CoinGecko · DuckDuckGo · Google News RSS      │
+                                        │  MyMemory · Yahoo Finance · ipwho.is           │
+                                        │  Gmail/Calendar (OAuth) · server MCP           │
+                                        │  Chromium headless (agente browser)            │
+                                        └────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Avvio rapido (sviluppo locale)
+## 🚀 Avvio rapido
 
 ### 1. Backend (FastAPI)
 
 ```bash
 cd backend
 python -m venv venv
-.\venv\Scripts\activate        # Windows
-# source venv/bin/activate     # macOS/Linux
+# Windows: .\venv\Scripts\activate
+# macOS/Linux: source venv/bin/activate
 
 pip install -r requirements.txt
+python -m playwright install chromium   # Chromium per l'agente browser
 
-# Copia variabili ambiente (opzionale — senza funziona in MOCK MODE)
-copy .env.example .env
+# Opzionale: personalizza le variabili (senza .env parte in modalità locale)
+copy .env.example .env      # macOS/Linux: cp .env.example .env
 
 uvicorn main:app --reload --port 8000
-# ✅ Health check:  http://localhost:8000/
+# ✅ Health check: http://localhost:8000/
 ```
 
-### 2. Frontend (Expo / React Native)
+> Usa **Python 3.11, 3.12 o 3.13**. Le dipendenze pinned (pydantic/supabase) non supportano
+> ancora Python 3.15.
+>
+> Se la porta 8000 è occupata: `uvicorn main:app --port 8010` e imposta
+> `EXPO_PUBLIC_API_URL=http://<IP-del-PC>:8010` nel frontend.
+
+### 2. App mobile (Expo)
 
 ```bash
 cd frontend
@@ -61,169 +73,200 @@ npm install
 npx expo start
 ```
 
-Oppure per testare senza device:
+> ⚠️ **Compatibilità Expo Go**: il progetto usa **Expo SDK 51**. L'Expo Go degli store
+> supporta solo l'SDK più recente, quindi per provarlo su un telefono serve una
+> **development build** (`eas build --profile development`) o un client Expo Go per
+> SDK 51 (emulatori). Per pubblicare sugli store oggi conviene pianificare l'upgrade
+> a SDK 57/58: è una migrazione separata (React Native/Reanimated/expo-av), non inclusa
+> in questo intervento.
+
 ```bash
-npm run web        # Web preview
-npm run typecheck  # Verifica statica TypeScript
+npm install -g eas-cli
+eas login
+eas init                              # crea il projectId (serve anche per le push)
+eas build --profile development --platform android
 ```
+
+| Comando | Cosa fa |
+|---|---|
+| `npm run start` | Bundler Expo (QR code per Expo Go) |
+| `npm run android` | Emulatore/dispositivo Android |
+| `npm run ios` | Simulatore iOS (solo macOS) |
+| `npm run typecheck` | `tsc --noEmit` (strict, 0 errori) |
 
 ---
 
-## 🔐 Configurazione ambiente (variabili)
-
-Creare `backend/.env` (**tutte opzionali** — il sistema funziona anche in **MOCK MODE** con file JSON locali):
+## 🔐 Variabili d'ambiente (tutte opzionali)
 
 | Variabile | Scopo | Default |
 |---|---|---|
-| `APP_ENV` | `development` / `staging` / `production` | `development` |
-| `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` | `INFO` |
-| `CORS_ORIGINS` | Lista origini consentite (separate da virgola) | `*` |
-| `SUPABASE_URL` | URL progetto Supabase | *(vuoto = MOCK MODE)* |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service role key Supabase | *(vuoto = MOCK MODE)* |
-| `GOOGLE_API_KEY_1`..`_3` | Chiavi Gemini (rotazione automatica + fallback 429) | *(vuoto = no LLM)* |
-| `NEWSAPI_KEY` | Chiave NewsAPI.org (notizie) | opzionale |
-| `OPENWEATHER_API_KEY` | Chiave OpenWeather (meteo) | opzionale |
+| `APP_ENV` | `development` / `production` | `development` |
+| `ATLAS_SECRET_KEY` | Segreto firma token (generato se assente) | auto |
+| `TOKEN_TTL_HOURS` | Durata sessione | `8` |
+| `CORS_ALLOWED_ORIGINS` | Origini per la preview web | `*` |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` | Database remoto (alias `SUPABASE_SERVICE_ROLE_KEY`) | *(vuoto = locale)* |
+| `GOOGLE_API_KEY_1..3` | Chiavi Gemini (rotazione + fallback quota) | *(vuoto = no LLM)* |
+| `GEMINI_MODEL` | Modello Gemini | `gemini-2.0-flash` |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Gmail + Calendar (OAuth gratuito) | *(vuoto = non collegato)* |
+| `MCP_SERVERS` | Server MCP come JSON `{nome: {url}}` | *(vuoto = nessuno)* |
+| `ATLAS_CITY` | Città per briefing e ombrello smart | `Milano` |
+| `ALLOW_PRIVATE_FETCH` | Consenti fetch/browser verso IP privati (sicurezza) | `false` |
+| `BROWSER_ENABLED` | Abilita l'agente browser | `true` |
+| `BROWSER_HEADLESS` | Chromium senza finestra (server) | `true` |
+| `BROWSER_SESSION_TTL` | Durata sessione browser per profilo (s) | `900` |
+| `AGENT_MAX_TOOL_TURNS` | Turni massimi di tool per risposta (browser multi-step) | `10` |
+| `GITHUB_TOKEN` | Alza il rate limit GitHub | opzionale |
+| `NEWSAPI_KEY` | NewsAPI (altrimenti Google News RSS) | opzionale |
+| `AMADEUS_CLIENT_ID` / `_SECRET` | Ricerca voli (piano gratuito) | opzionale |
+| `FIREBASE_CREDENTIALS` | Solo per token FCM nativi | opzionale |
 
-**Frontend**: variabili ambiente `EXPO_PUBLIC_API_URL` per forzare l'endpoint backend (utile per build production). Se assente, viene auto-risolto: `EXPO_PUBLIC_API_URL` → IP LAN Expo Go → `localhost:8000`.
+**Frontend**: `EXPO_PUBLIC_API_URL` forza l'endpoint. Se assente viene risolto da IP LAN
+Expo Go, poi `10.0.2.2` su emulatore Android, poi `localhost`.
 
 ---
 
-## 🛡️ Caratteristiche di sicurezza (hardened)
+## 🛡️ Sicurezza
 
-| Controllo | Stato | Dove |
+| Controllo | Stato |
+|---|---|
+| PIN con hash bcrypt (rounds 12) — hash reali nei profili demo | ✅ |
+| Token di sessione firmati HMAC-SHA256, TTL 8h, **stateless** (funzionano con più worker) | ✅ |
+| Endpoint privati protetti da `Authorization: Bearer` (todos, budget, chat, impostazioni, profili) | ✅ |
+| Rate limit PIN: 5/minuto per IP + 20/min chat | ✅ |
+| Confronto a tempo costante, nessun `eval()` (parser AST) | ✅ |
+| Error handler globale (nessuno stacktrace esposto) | ✅ |
+| Segreto di firma persistito con permessi 600 (o da env) | ✅ |
+| **Logout reale**: token revocato sul server (denylist fino a scadenza) | ✅ |
+| **Ruoli**: solo l'amministratore `io` crea/elimina profili | ✅ |
+| **Protezione SSRF** su fetch web e browser (IP privati bloccati, redirect inclusi) | ✅ |
+| **Prompt injection**: il testo delle pagine è trattato come dato non attendibile | ✅ |
+| **Sessioni browser isolate per profilo** (cookie/pagine separati, TTL 15 min) | ✅ |
+| **Scheduler a istanza singola** via lock di processo (niente notifiche duplicate) | ✅ |
+| Token push morti disattivati automaticamente (`DeviceNotRegistered`) | ✅ |
+
+---
+
+## 👨‍👩‍👧‍👦 Multi-utente e privacy
+
+Una istanza ATLAS = **una famiglia**. I dati sono separati in due livelli:
+
+| Dati | Visibilità |
+|---|---|
+| Chat e memoria AI, punti/streak italiano, dispositivi push, sessione browser | **Per profilo** (token obbligatorio) |
+| Lista spesa/todo, budget, impostazioni automazioni, account Google | **Condivisi dalla famiglia** |
+| Creazione/eliminazione profili, PIN | **Solo amministratore** (`io`) |
+
+Ogni richiesta privata richiede `Authorization: Bearer` e il backend ricava il profilo
+dal token: non è possibile leggere i dati di un altro profilo passando uno slug diverso.
+Per più famiglie servono istanze separate (o un fork con `family_id` nello schema).
+L'account Gmail/Calendar è unico per la famiglia: chi lo collega autorizza tutti i membri
+a usarlo tramite l'assistente.
+
+**Privacy**: i messaggi e le foto della chat vengono inviati a Google Gemini per essere
+elaborati. Il backend non salva le immagini su disco (restano solo nella cronologia locale
+dell'app come testo); le email vengono lette solo se colleghi Gmail.
+
+---
+
+## ✅ Cosa funziona davvero
+
+| Funzione | Stato | Richiede |
 |---|---|---|
-| Hash PIN con `bcrypt` + `passlib` (rounds=12) | ✅ | [backend/app/core/security.py](backend/app/core/security.py) |
-| Confronto PIN a tempo costante (`hmac.compare_digest`) | ✅ | `security.constant_time_equal()` |
-| Rate limit anti-bruteforce PIN: **5/min per IP** | ✅ | `slowapi` + storage in-memory in [main.py](backend/main.py) |
-| Validazione input PIN (4–8 cifre numeriche) | ✅ | Pydantic `field_validator` in [main.py](backend/main.py) |
-| CORS restrittivo da env (nessun wildcard + allow_credentials) | ✅ | lifespan CORS middleware |
-| **Rimosso `eval()`** — calcolatrice con parser AST whitelist | ✅ | [backend/app/tools/utility.py](backend/app/tools/utility.py) · `_safe_math_eval()` |
-| Autenticazione stateless: token 32-byte + TTL 8h | ✅ | `security.generate_safe_token()` |
-| Error handler globale (nessun leak stacktrace in prod) | ✅ | `@app.exception_handler(Exception)` in main.py |
+| Login PIN + sessione persistente + logout | ✅ reale | — |
+| Chat AI + memoria conversazionale | ✅ reale | `GOOGLE_API_KEY_1` (Gemini free tier) |
+| **Foto dalla galleria in chat** (analisi e OCR) | ✅ reale | `GOOGLE_API_KEY_1` (Gemini vision) |
+| Dettatura vocale in chat | ✅ reale | `GOOGLE_API_KEY_1` (Gemini trascrive l'audio) |
+| **Agente browser** (apre siti, clicca, compila, legge JS) | ✅ reale | Chromium (`playwright install chromium`) |
+| Todos / lista spesa condivisa | ✅ reale | — |
+| Budget per categoria + totale mese | ✅ reale | — |
+| Dashboard con KPI reali | ✅ reale | — |
+| Notifiche locali programmate (acqua, lezione, …) | ✅ reale | — |
+| Push remote alle automazioni | ✅ reale | `extra.eas.projectId` in `app.json` |
+| 11 automazioni (meteo, crypto, budget, email, italiano, calendario) | ✅ reale | credenziali dei servizi usati |
+| Lezioni + quiz italiano con punti/streak | ✅ reale | — |
+| Gmail: lettura inbox e appuntamenti | ✅ reale | OAuth Google |
+| Calendar: crea evento / agenda del giorno | ✅ reale | OAuth Google |
+| Server MCP (tool discovery + call) | ✅ reale | `MCP_SERVERS` |
+| Ricerca web, notizie, meteo, crypto, cambio, azioni, traduzioni, QR | ✅ reale | — |
+| Voli | ✅ reale con Amadeus, altrimenti link reali | `AMADEUS_*` |
+
+Nessun tool restituisce più un finto successo: se un servizio non è configurato, la risposta
+lo dice e spiega come attivarlo.
 
 ---
 
-## 🧪 Qualità & Test
+## 🧪 Qualità & test
 
-### Backend — pytest (54 test)
 ```bash
-cd backend
-.\venv\Scripts\activate
-pytest -v         # 54 test: security (16) · tools (24) · endpoints (14)
-pytest --cov=app  # Copertura codice
+cd backend && pytest -q          # 141 test (inclusi 15 test browser reali)
+cd frontend && npm run typecheck  # 0 errori (strict)
 ```
 
-| Suite test | N. | Cosa copre |
-|---|---|---|
-| `test_security.py` | 16 | bcrypt hash/verify, validazione pin, costant-time, token, sanitize, SHA256 |
-| `test_tools.py` | 24 | Calcolatrice AST (19 test), todos (3), budget (2), Haversine |
-| `test_endpoints.py` | 14 | Health, /profili, /auth/pin (5 casi + rate limit), /chat, todos CRUD, budget CRUD, 422 Pydantic |
-
-### Frontend — TypeScript strict
-```bash
-cd frontend
-npm run typecheck    # tsc --noEmit · strict mode
-```
-
----
-
-## 📦 Ambienti
-
-| Ambiente | Configurazione | Note |
-|---|---|---|
-| **Sviluppo** | `APP_ENV=development` | log DEBUG, auto-reload uvicorn, CORS * |
-| **Staging** | `APP_ENV=staging` · 1 chiave Gemini | CORS dominio staging specifico, logger `RotatingFileHandler` 5MB |
-| **Produzione** | `APP_ENV=production` · Supabase + 3 chiavi Gemini | `gunicorn -k uvicorn.workers.UvicornWorker -w 4` + env CORS stretto, reverse proxy Nginx |
+| Suite backend | Copre |
+|---|---|
+| `test_security.py` | bcrypt, PIN, token, sanitizzazione |
+| `test_tools.py` | calcolatrice AST, todo, budget, formule |
+| `test_endpoints.py` | auth reale, 401, todos, budget, dashboard, notifiche, impostazioni, italiano, profili, Google |
+| `test_mcp.py` | handshake MCP, tools/list, tools/call su server locale |
+| `test_notifications.py` | invio Expo Push reale (server mock), ticket rifiutati, token per profilo |
+| `test_google_oauth.py` | URL OAuth, state firmato, stato non configurato |
+| `test_multiuser.py` | isolamento chat/push per profilo, ruoli admin, revoca del token al logout |
+| `test_net_guard.py` | blocco SSRF verso loopback, reti private e metadata cloud |
+| `test_scheduler_lock.py` | un solo processo esegue i job |
+| `test_weather.py` | variabili Open-Meteo corrette e parsing meteo/previsioni |
+| `test_chat_image.py` | invio foto: PNG valido, MIME/base64/dimensioni rifiutati correttamente |
+| `test_browser.py` | Chromium reale: navigazione, click, form, select, scroll, storia, sessioni isolate, SSRF |
 
 ---
 
-## 📂 Struttura cartelle
+## 📂 Struttura
 
 ```
 atlas-ai/
 ├── backend/
-│   ├── main.py                 # Entrypoint FastAPI, endpoints, lifespan, rate limit, handlers
-│   ├── requirements.txt        # Dipendenze pinned
-│   ├── pytest.ini              # Config pytest
-│   ├── tests/                  # test_security · test_tools · test_endpoints · conftest
-│   ├── .env.example            # Template env vars
+│   ├── main.py                 # API FastAPI (auth, chat, notifiche, impostazioni, italiano)
 │   ├── app/
-│   │   ├── ai_router.py        # Router Gemini function calling (0/1/2/3 keys fallback)
-│   │   ├── scheduler.py        # Singleton APScheduler, 8 automazioni pianificate
+│   │   ├── ai_router.py        # Gemini + function calling + trascrizione audio
+│   │   ├── scheduler.py        # 11 automazioni reali con push
+│   │   ├── notifiche.py        # Expo Push / FCM
 │   │   ├── core/
-│   │   │   ├── database.py     # Supabase client lazy + @resilient decorator fallback locale
-│   │   │   ├── security.py     # bcrypt PIN, token, sanitize, constant_time
-│   │   │   ├── logging_config.py # RotatingFileHandler + StreamHandler strutturato
-│   │   │   └── settings.py     # Parsing env, pin limiti, rotazione API keys
-│   │   └── tools/
-│   │       ├── registry.py     # 18+ funzioni registerate per function calling
-│   │       ├── utility.py      # Calcolatrice AST, web search, wikipedia, news, haversine
-│   │       ├── family.py       # Todos · note · voti scuola
-│   │       ├── finance.py      # Budget familiare, spese, report
-│   │       ├── travel.py       # Meteo, geolocalizzazione, cambio valuta
-│   │       ├── italian_module.py # Esercizi italiano per stranieri
-│   │       ├── google_tools.py # Documenti Google, Gmail (placeholder)
-│   │       └── services/       # web_search.py, nlp_italian.py helpers
-│   └── _local_db/              # File JSON fallback (todos, spese, messaggi...) — creato auto se Supabase assente
-│
+│   │   │   ├── database.py     # Supabase + fallback locale (todo, budget, token, settings)
+│   │   │   ├── security.py     # bcrypt + token HMAC
+│   │   │   ├── settings.py     # env centralizzate con alias
+│   │   │   ├── net_guard.py    # protezione SSRF per i fetch web
+│   │   │   ├── scheduler_lock.py  # un solo worker esegue i job
+│   │   │   ├── schemas.py      # Pydantic v2
+│   │   │   └── logging_config.py
+│   │   ├── services/
+│   │   │   ├── google_oauth.py # OAuth Gmail/Calendar
+│   │   │   └── browser.py      # agente Chromium: worker, sessioni, SSRF
+│   │   └── tools/              # 45 tool (browser, family, finance, travel, utility, MCP, italiano)
+│   ├── tests/                  # 141 test
+│   └── supabase_schema.sql
 └── frontend/
-    ├── App.tsx                 # AuthContext, navigazione (Stack + BottomTabs)
-    ├── package.json            # Expo ~51.0, React Native 0.74, NativeWind 3.3
-    ├── tsconfig.json           # strict: true, alias @/*
-    ├── shims.d.ts              # moduli assets + AsyncStorage stub
-    ├── nativewind-env.d.ts     # className supporto nei componenti RN
+    ├── App.tsx                 # AuthContext, sessione, navigazione, notifiche
     └── src/
-        ├── config.ts           # URL backend dinamico (env → Expo LAN → localhost)
-        ├── services/api.ts     # ApiService singleton · timeout 15s · Bearer auto
-        ├── context/AuthContext.tsx  # Stato auth globale, persistenza AsyncStorage
-        └── screens/            # ProfileScreen (PIN) · Home · Chat · Todos · Budget
+        ├── config.ts
+        ├── services/api.ts     # client tipizzato + gestione 401
+        ├── services/notifications.ts
+        └── screens/            # Profile · Home · Chat · Italiano · Budget · Impostazioni
 ```
 
 ---
 
-## 🔄 Resilienza & Fallback (design chiave)
+## 🤝 Open source
 
-1. **Database**: Decoratore `@resilient(fallback_return=...)` su tutte le funzioni DB — se Supabase è irraggiungibile, salva/legge in modo trasparente da file JSON locale sotto `backend/_local_db/`. L'utente non percepisce alcun downtime.
-2. **LLM Gemini**: Fino a 3 chiavi API ruotate automaticamente; se tutte danno errore 429 (quota), viene ritornata risposta locale sintetica invece di crash.
-3. **Tools opzionali**: Import `wikipedia` e `duckduckgo-search` con graceful degradation — se mancano, le funzioni tornano messaggio istruttivo invece di bloccare l'intera app.
-4. **Rate limiting**: Tutti gli endpoint protetti (es. `/auth/pin`) + limiti generosi per endpoints pubblici.
+- **Licenza**: [MIT](LICENSE) — puoi usare, modificare e distribuire il progetto.
+- **Contributi**: leggi [CONTRIBUTING.md](CONTRIBUTING.md) (setup, test obbligatori, regole).
+- **Sicurezza**: segnalazioni private secondo [SECURITY.md](SECURITY.md); non aprire issue pubbliche per le vulnerabilità.
+- **CI**: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) esegue `pytest` e `tsc --noEmit` su ogni push/PR.
+- **Nessun segreto nel repo**: `.env` e `_local_db/` sono ignorati; usa `.env.example` come modello.
+- **Agente browser**: architettura, tool e limiti in [`docs/BROWSER.md`](docs/BROWSER.md).
 
----
+## 💸 Costi
 
-## 🚀 Deploy
+Tutto il percorso base è **gratuito**: Gemini free tier, Expo Push, Open-Meteo, CoinGecko,
+DuckDuckGo, Google News RSS, MyMemory, Supabase free tier, OAuth Google, Amadeus self-service
+(free tier). Nessun servizio a pagamento è richiesto.
 
-### Backend (Docker / Ubuntu / Railway / Render)
-
-```bash
-# Dockerfile esempio
-FROM python:3.11-slim
-WORKDIR /app
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY backend/ .
-ENV APP_ENV=production PYTHONUNBUFFERED=1
-EXPOSE 8000
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8000", "main:app"]
-```
-
-### Frontend (EAS Build)
-
-```bash
-npm install -g eas-cli
-eas build:configure
-eas build --platform android --profile preview     # APK di test
-eas build --platform ios --profile production      # App Store
-```
-
----
-
-## ✅ Checklist upgrade enterprise (attuali)
-
-- [x] Sicurezza: bcrypt, rate limit 5/min, anti-bruteforce, CORS restrittivo, AST parser instead of eval
-- [x] Architettura: FastAPI lifespan, scheduler singleton, @resilient fallback Supabase→JSON
-- [x] Frontend: AuthContext, ApiService singleton, URL dinamico, PIN verify remoto
-- [x] Gestione errori: handler globale, log strutturato (RotatingFileHandler), except specifici
-- [x] Test: 54 test pytest (security/tools/endpoints), 16/16, 24/24, 14/14 PASSATI
-- [x] Dipendenze: pinned a versione stabile ~30 packages backend, Expo 51.0.28 frontend
-- [x] Typecheck: `tsc --noEmit` 0 errori strict mode
-- [x] Avvio backend reale verificato + endpoints rispondono 200 OK
+Vedi [REVIEW.md](REVIEW.md) per l'audit completo, le correzioni fatte e le raccomandazioni.

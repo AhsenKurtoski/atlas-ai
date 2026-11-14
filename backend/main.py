@@ -1,45 +1,63 @@
 """
 ATLAS AI v3.0 — Entrypoint principale FastAPI.
 
-Sicurezza & Architettura:
-- CORS restrittivo basato su variabile ambiente
-- Rate limiting (slowapi) per proteggere PIN bruteforce
-- Validazione input Pydantic v2
-- Autenticazione PIN con hash bcrypt + confronto a tempo costante
+Sicurezza & architettura:
+- Token di sessione firmati HMAC (stateless → sicuri anche con più worker)
+- Autenticazione obbligatoria su tutti i dati privati (todos, budget, chat, …)
+- Rate limiting (slowapi) contro bruteforce del PIN
+- Validazione input Pydantic v2 e messaggi d'errore uniformi
 - Persistenza Supabase + fallback locale resiliente
 - Logging strutturato con rotazione file
-"""
-from __future__ import annotations
 
-import ipaddress
+Nota: qui NON usiamo `from __future__ import annotations` perché FastAPI deve
+risolvere le annotazioni a runtime (slowapi avvolge gli endpoint e i tipi
+rinviati diventerebbero ForwardRef non risolvibili).
+"""
+import base64
+import binascii
 import os
 import time
-import urllib.parse
 from contextlib import asynccontextmanager
-from typing import Iterable
+from typing import Any
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from starlette.concurrency import run_in_threadpool
 
 from app.ai_router import ai_router
 from app.core.database import (
     add_spesa,
     add_todo,
     complete_todo_by_index,
+    delete_profile as db_delete_profile,
+    deactivate_push_token,
     fetch_profiles,
     get_budget_summary,
+    get_dashboard,
+    get_italian_leaderboard,
+    get_italian_progress,
+    get_push_tokens,
+    get_settings,
     get_todos,
     get_user_memory,
     is_mock_mode,
     save_message,
+    save_push_token,
+    update_settings,
+    upsert_profile,
+    add_italian_progress,
+    demo_pins_in_use,
+    is_token_revoked,
+    revoke_token,
 )
 from app.core.logging_config import get_logger
 from app.core.schemas import (
@@ -47,18 +65,44 @@ from app.core.schemas import (
     AddTodoRequest,
     ChatRequest,
     ChatResponse,
+    CreateProfileRequest,
     GenericResponse,
     HealthResponse,
+    MeResponse,
     PinAuthRequest,
     PinAuthResponse,
     ProfileSummary,
+    PushRegisterRequest,
+    PushTestRequest,
+    QuizSubmitRequest,
+    SettingsUpdateRequest,
+    TranscriptionRequest,
+    TranscriptionResponse,
 )
-from app.core.security import generate_safe_token, is_safe_numeric_pin, verify_pin
-from app.scheduler import start_scheduler, stop_scheduler
+from app.core.security import (
+    create_access_token,
+    decode_access_token,
+    hash_pin,
+    normalize_slug,
+    sha256_text,
+    token_info,
+    token_ttl_seconds,
+    verify_pin,
+)
+from app.core.settings import cors_origins, is_production, scheduler_enabled
+from app.notifiche import invia_a_profilo
+from app.services.browser import browser_profile, shutdown_browser
+from app.scheduler import (
+    automazioni_totali,
+    get_jobs,
+    get_scheduler,
+    start_scheduler,
+    stop_scheduler,
+)
+from app.tools.italian import lezione_del_giorno, normalizza_livello, quiz_per_livello, valuta_quiz
 
 log = get_logger(__name__)
 
-# ---------------- Rate Limiter ----------------
 limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
 
 
@@ -66,23 +110,50 @@ limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("🚀 Avvio ATLAS AI v3.0 - ambiente=%s", os.getenv("APP_ENV", "development"))
-    try:
-        start_scheduler(run_test=True)
-    except Exception as exc:
-        log.error("Impossibile avviare scheduler (continuo senza): %s", exc)
+    if scheduler_enabled():
+        try:
+            start_scheduler()
+        except Exception as exc:  # pragma: no cover - dipende dall'ambiente
+            log.error("Impossibile avviare scheduler (continuo senza): %s", exc)
+    else:
+        log.info("⏸️ Scheduler disattivato da SCHEDULER_ENABLED=false")
     log.info("✅ Modalità DB: %s", "MOCK/LOCALE" if is_mock_mode() else "SUPABASE")
-    yield
-    log.info("🛑 Arresto ATLAS AI")
+    log.info("✅ Chiavi Gemini: %d", len(ai_router.chiavi))
+
+    if is_production():
+        if not os.getenv("ATLAS_SECRET_KEY", "").strip():
+            log.warning(
+                "⚠️ ATLAS_SECRET_KEY non impostata: i token valgono solo su questo host. "
+                "Imposta un segreto unico per tutti i worker/istanze."
+            )
+        demo = demo_pins_in_use()
+        if demo:
+            log.warning(
+                "⚠️ PIN demo ancora attivi per: %s. Cambiali prima di esporre il servizio.",
+                ", ".join(demo),
+            )
+        if "*" in cors_origins():
+            log.warning(
+                "⚠️ CORS aperto a tutte le origini: imposta CORS_ALLOWED_ORIGINS in produzione."
+            )
+
     try:
-        stop_scheduler()
-    except Exception:
-        pass
+        yield
+    finally:
+        log.info("🛑 Arresto ATLAS AI")
+        try:
+            stop_scheduler()
+        except Exception:  # pragma: no cover
+            pass
+        try:
+            shutdown_browser()
+        except Exception:  # pragma: no cover
+            pass
 
 
-# ---------------- App & middleware ----------------
 app = FastAPI(
     title="ATLAS AI v3.0 Backend",
-    description="Assistente AI per la famiglia con LLM + 45+ tools integrati",
+    description="Assistente AI per la famiglia con LLM, tool reali e notifiche push",
     version="3.0.0",
     lifespan=lifespan,
 )
@@ -90,203 +161,599 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
-def _parse_cors_origins() -> list[str]:
-    raw = os.getenv("CORS_ALLOWED_ORIGINS", "")
-    if not raw:
-        return []
-    parts = [p.strip() for p in raw.split(",") if p.strip()]
-    # In produzione: "*" con credentials è proibito dallo standard; permettiamo
-    # origini esplicite. Se "development" aggiungiamo localhost standard Expo.
-    env = os.getenv("APP_ENV", "development")
-    if env == "development":
-        for extra in ("http://localhost:8081", "http://localhost:19006"):
-            if extra not in parts:
-                parts.append(extra)
-    # Filtriamo wild-card disallineati con credentials=True
-    safe: list[str] = [p for p in parts if p != "*"]
-    return safe
-
-
-_CORS_ORIGINS = _parse_cors_origins()
+# ---------------- CORS ----------------
+_ORIGINS = cors_origins()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_CORS_ORIGINS if _CORS_ORIGINS else ["*"],
-    allow_credentials=bool(_CORS_ORIGINS),  # non si può abilitare con "*"
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_origins=_ORIGINS,
+    allow_credentials="*" not in _ORIGINS,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "Accept"],
     max_age=600,
 )
-log.info("CORS origins: %s", _CORS_ORIGINS or ["*"])
 
 
-# ---------------- Token storage in-memory (refactorabile in Redis/Supabase) ----------------
-_TOKENS: dict[str, tuple[str, float]] = {}  # token -> (slug, expires_at)
-_TOKEN_TTL_SEC = 60 * 60 * 8  # 8 ore
-
-
-def _validate_token(token: str | None, expected_slug: str) -> bool:
-    """Valida un token e opzionalmente controlla che appartenga allo slug atteso."""
-    if not token:
-        return False
-    entry = _TOKENS.get(token)
-    if not entry:
-        return False
-    slug, expires = entry
-    if expires < time.time():
-        _TOKENS.pop(token, None)
-        return False
-    return slug == expected_slug
+# ---------------- Autenticazione ----------------
+def get_current_profile(request: Request) -> str:
+    """Slug del profilo autenticato (header `Authorization: Bearer <token>`)."""
+    header = request.headers.get("Authorization", "")
+    if not header.lower().startswith("bearer "):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token mancante: effettua l'accesso.")
+    raw_token = header[7:].strip()
+    slug = decode_access_token(raw_token)
+    if not slug:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessione scaduta: effettua di nuovo l'accesso.")
+    if is_token_revoked(sha256_text(raw_token)):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessione chiusa: effettua di nuovo l'accesso.")
+    if slug not in fetch_profiles():
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Profilo non più valido.")
+    return slug
 
 
 # ---------------- Root & Health ----------------
 @app.get("/", response_model=HealthResponse)
 @limiter.limit("60/minute")
 def read_root(request: Request) -> HealthResponse:
-    profili = len(fetch_profiles())
     return HealthResponse(
         status="ok",
-        profili=profili,
-        automazioni=8,
+        profili=len(fetch_profiles()),
+        automazioni=automazioni_totali(),
+        scheduler_attivo=get_scheduler() is not None,
         ambiente=os.getenv("APP_ENV", "development"),
-        versione="3.0.0",
+        db_mode="locale" if is_mock_mode() else "supabase",
+        notifiche="expo",
+        llm=bool(ai_router.chiavi),
     )
 
 
 # ---------------- Profili ----------------
 @app.get("/profili", response_model=dict[str, ProfileSummary])
-@limiter.limit("30/minute")
+@limiter.limit("60/minute")
 def get_profili(request: Request) -> dict[str, ProfileSummary]:
-    profili = fetch_profiles()
     return {
-        k: ProfileSummary(
-            nome=v.get("nome", ""),
-            livello_italiano=v.get("livello_italiano", "B1"),
+        slug: ProfileSummary(
+            nome=profile.get("nome", ""),
+            livello_italiano=profile.get("livello_italiano", "B1"),
+            lingua_madre=profile.get("lingua_madre", "Italiano"),
         )
-        for k, v in profili.items()
+        for slug, profile in fetch_profiles().items()
     }
+
+
+@app.post("/profili", response_model=GenericResponse)
+@limiter.limit("20/minute")
+def crea_profilo(
+    request: Request,
+    payload: CreateProfileRequest,
+    slug_autenticato: str = Depends(get_current_profile),
+) -> GenericResponse:
+    if slug_autenticato != "io":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Solo il profilo amministratore può creare o eliminare profili.",
+        )
+    profili = fetch_profiles()
+    slug = normalize_slug(payload.slug or payload.nome)
+    if not slug:
+        return GenericResponse(status="error", message="Nome non valido: usa lettere o numeri.")
+    if slug in profili:
+        return GenericResponse(status="error", message=f"Esiste già un profilo '{slug}'.")
+    if len(profili) >= 15:
+        return GenericResponse(status="error", message="Limite di 15 profili famiglia raggiunto.")
+
+    upsert_profile(
+        slug=slug,
+        nome=payload.nome.strip(),
+        lingua_madre=payload.lingua_madre.strip() or "Italiano",
+        livello_italiano=payload.livello_italiano.strip() or "B1",
+        pin_hash=hash_pin(payload.pin),
+    )
+    log.info("Profilo creato da %s: %s", slug_autenticato, slug)
+    return GenericResponse(status="ok", message=f"Profilo '{payload.nome}' creato.", data={"slug": slug})
+
+
+@app.delete("/profili/{slug}", response_model=GenericResponse)
+@limiter.limit("20/minute")
+def elimina_profilo(
+    request: Request,
+    slug: str,
+    slug_autenticato: str = Depends(get_current_profile),
+) -> GenericResponse:
+    if slug_autenticato != "io":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Solo il profilo amministratore può creare o eliminare profili.",
+        )
+    target = normalize_slug(slug)
+    if target == slug_autenticato:
+        return GenericResponse(status="error", message="Non puoi eliminare il profilo con cui sei connesso.")
+    if target == "io":
+        return GenericResponse(status="error", message="Il profilo amministratore non può essere eliminato.")
+    if target not in fetch_profiles():
+        return GenericResponse(status="error", message="Profilo non trovato.")
+    db_delete_profile(target)
+    return GenericResponse(status="ok", message=f"Profilo '{target}' eliminato.")
 
 
 # ---------------- Auth PIN ----------------
 @app.post("/auth/pin", response_model=PinAuthResponse)
-@limiter.limit("5/minute")  # Protezione bruteforce: 5 tentativi al minuto per IP
+@limiter.limit("5/minute")  # anti-bruteforce: 5 tentativi al minuto per IP
 async def verifica_pin(request: Request, payload: PinAuthRequest) -> PinAuthResponse:
     profili = fetch_profiles()
-    profilo = profili.get(payload.profilo.lower())
+    profilo = profili.get(normalize_slug(payload.profilo))
     if not profilo:
         log.warning("Auth fallito: profilo sconosciuto %s", payload.profilo)
         return PinAuthResponse(auth=False, message="Profilo non valido.")
 
-    if not is_safe_numeric_pin(payload.pin):
-        return PinAuthResponse(auth=False, message="PIN non valido (solo cifre 4-8).")
-
     pin_hash = profilo.get("pin_hash")
     if not pin_hash:
-        log.error("Nessun pin_hash configurato per %s (auth non disponibile)", profilo["slug"])
+        log.error("Nessun pin_hash configurato per %s", profilo.get("slug"))
         return PinAuthResponse(auth=False, message="Profilo non configurato correttamente.")
 
-    ok = verify_pin(payload.pin, pin_hash)
-    if not ok:
-        log.info("PIN errato per %s", profilo["slug"])
+    if not verify_pin(payload.pin, pin_hash):
+        log.info("PIN errato per %s", profilo.get("slug"))
         return PinAuthResponse(auth=False, message="PIN errato.")
 
-    token = generate_safe_token(40)
-    expires = time.time() + _TOKEN_TTL_SEC
-    _TOKENS[token] = (profilo["slug"], expires)
-    log.info("Auth OK: %s, token=%s...", profilo["slug"], token[:6])
+    token = create_access_token(profilo["slug"])
+    log.info("Auth OK: %s", profilo["slug"])
     return PinAuthResponse(
         auth=True,
         profilo=profilo.get("nome"),
+        slug=profilo["slug"],
         token=token,
+        expires_in=token_ttl_seconds(),
         message="Autenticazione riuscita.",
     )
+
+
+@app.get("/auth/me", response_model=MeResponse)
+@limiter.limit("60/minute")
+def auth_me(
+    request: Request,
+    slug: str = Depends(get_current_profile),
+) -> MeResponse:
+    profilo = fetch_profiles().get(slug, {})
+    header = request.headers.get("Authorization", "")
+    info = token_info(header[7:].strip()) if header else None
+    return MeResponse(
+        slug=slug,
+        nome=profilo.get("nome", slug),
+        lingua_madre=profilo.get("lingua_madre", "Italiano"),
+        livello_italiano=profilo.get("livello_italiano", "B1"),
+        expires_at=info[1] if info else None,
+    )
+
+
+@app.post("/auth/logout", response_model=GenericResponse)
+@limiter.limit("30/minute")
+def auth_logout(request: Request, slug: str = Depends(get_current_profile)) -> GenericResponse:
+    """Chiude la sessione revocando il token corrente (denylist fino a scadenza)."""
+    header = request.headers.get("Authorization", "")
+    raw_token = header[7:].strip() if header.lower().startswith("bearer ") else ""
+    info = token_info(raw_token) if raw_token else None
+    if info:
+        revoke_token(sha256_text(raw_token), info[1])
+    log.info("Logout profilo %s (token revocato)", slug)
+    return GenericResponse(status="ok", message="Sessione chiusa su questo dispositivo.")
 
 
 # ---------------- Chat ----------------
 @app.post("/chat", response_model=ChatResponse)
 @limiter.limit("20/minute")
-async def chat_endpoint(request: Request, payload: ChatRequest) -> ChatResponse:
-    t0 = time.perf_counter()
-    profili = fetch_profiles()
-    slug = payload.profilo.lower()
-    profilo = profili.get(slug) or profili.get("io")
+async def chat_endpoint(
+    request: Request,
+    payload: ChatRequest,
+    slug: str = Depends(get_current_profile),
+) -> ChatResponse:
+    started = time.perf_counter()
+    profilo = fetch_profiles().get(slug)
     if profilo is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Profilo inesistente.")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Profilo inesistente.")
 
-    # Chat è permessa anche senza token se l'utente ha già superato il PIN lato app;
-    # il token è opzionale ma se fornito viene validato per sicurezza.
-    if payload.token and not _validate_token(payload.token, slug):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token non valido o scaduto.")
+    immagine: tuple[bytes, str] | None = None
+    if payload.immagine_base64:
+        mime = (payload.immagine_mime_type or "image/jpeg").strip().lower()
+        if mime not in {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Formato immagine non supportato (usa JPEG, PNG, WebP o HEIC).",
+            )
+        try:
+            dati_immagine = base64.b64decode(payload.immagine_base64, validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Immagine base64 non valida.")
+        if len(dati_immagine) < 64:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Immagine troppo piccola o vuota.")
+        if len(dati_immagine) > 10 * 1024 * 1024:
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                "Foto troppo grande (max 10 MB). Scegline una più piccola.",
+            )
+        immagine = (dati_immagine, mime)
 
-    # Salva messaggio utente (persistente RAG)
-    save_message(profile_slug=slug, role="user", content=payload.msg)
-
-    # Carica memoria recente come contesto (se supportato dal router)
     memoria = get_user_memory(profile_slug=slug, limit=10)
-
-    risposta = ai_router.chiedi(prompt=payload.msg, profilo_utente=profilo, memoria=memoria)
-
+    save_message(profile_slug=slug, role="user", content=payload.msg)
+    # Il browser usa il profilo corrente per isolare cookie/pagine; il modello
+    # gira in un thread per non bloccare l'event loop durante navigazioni lunghe.
+    profilo_browser = browser_profile.set(slug)
+    try:
+        risposta = await run_in_threadpool(
+            ai_router.chiedi,
+            prompt=payload.msg,
+            profilo_utente=profilo,
+            memoria=memoria,
+            immagine=immagine,
+        )
+    finally:
+        browser_profile.reset(profilo_browser)
     save_message(profile_slug=slug, role="ai", content=str(risposta))
 
+    if immagine:
+        log.info("Chat con foto per %s: %d KB (%s)", slug, len(immagine[0]) // 1024, immagine[1])
     return ChatResponse(
         reply=str(risposta),
-        latency_ms=round((time.perf_counter() - t0) * 1000, 1),
+        latency_ms=round((time.perf_counter() - started) * 1000, 1),
     )
 
 
-# ---------------- Todos / Lista spesa ----------------
-@app.get("/todos")
+@app.post("/chat/trascrivi", response_model=TranscriptionResponse)
+@limiter.limit("20/minute")
+async def trascrivi_audio(
+    request: Request,
+    payload: TranscriptionRequest,
+    slug: str = Depends(get_current_profile),
+) -> TranscriptionResponse:
+    """Trascrive un messaggio vocale (base64) usando Gemini."""
+    mime = payload.mime_type.strip().lower()
+    if not mime.startswith("audio/"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Formato audio non supportato.")
+    try:
+        audio = base64.b64decode(payload.audio_base64, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Audio base64 non valido.")
+    if len(audio) < 512:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Audio troppo corto.")
+    if len(audio) > 10 * 1024 * 1024:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Audio troppo grande (max 10 MB).")
+
+    testo = ai_router.trascrivi_audio(audio, mime_type=mime)
+    if not testo:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Trascrizione non disponibile: verifica le chiavi Gemini nel backend.",
+        )
+    log.info("Trascrizione per %s: %d caratteri", slug, len(testo))
+    return TranscriptionResponse(testo=testo)
+
+
+# ---------------- Dashboard ----------------
+@app.get("/dashboard", response_model=GenericResponse)
 @limiter.limit("60/minute")
-def lista_todos(request: Request, filtro: str = Query(default="")) -> GenericResponse:
+def dashboard(
+    request: Request,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    return GenericResponse(status="ok", data=get_dashboard(slug))
+
+
+# ---------------- Todos / Lista spesa ----------------
+@app.get("/todos", response_model=GenericResponse)
+@limiter.limit("60/minute")
+def lista_todos(
+    request: Request,
+    filtro: str = Query(default=""),
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
     only_pending = filtro.lower() in ("da_fare", "pending", "attivi", "da fare")
     todos = get_todos(only_pending=only_pending)
     simplified = [
         {
-            "id": t.get("id"),
-            "task": t.get("task_text") or t.get("task"),
-            "assegnato_a": t.get("assegnato_a", "Tutti"),
-            "done": bool(t.get("is_completed", t.get("done", False))),
-            "created": t.get("created_at") or t.get("created"),
+            "id": todo.get("id"),
+            "task": todo.get("task_text") or todo.get("task"),
+            "assegnato_a": todo.get("assegnato_a", "Tutti"),
+            "done": bool(todo.get("is_completed", todo.get("done", False))),
+            "created": todo.get("created_at") or todo.get("created"),
         }
-        for t in todos
+        for todo in todos
     ]
     return GenericResponse(status="ok", data=simplified)
 
 
 @app.post("/todos", response_model=GenericResponse)
 @limiter.limit("30/minute")
-def aggiungi_todo(request: Request, payload: AddTodoRequest) -> GenericResponse:
-    esito = add_todo(task=payload.task, created_by_slug=payload.slug, assegnato_a=payload.assegnato_a)
-    return GenericResponse(status="ok", message=esito if isinstance(esito, str) else "Todo aggiunto.")
+def aggiungi_todo(
+    request: Request,
+    payload: AddTodoRequest,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    esito = add_todo(task=payload.task.strip(), created_by_slug=slug, assegnato_a=payload.assegnato_a)
+    return GenericResponse(
+        status="ok",
+        message=esito if isinstance(esito, str) and esito != "ok" else "Todo aggiunto.",
+    )
 
 
 @app.post("/todos/{numero}/completa", response_model=GenericResponse)
 @limiter.limit("60/minute")
-def completa_todo(request: Request, numero: int) -> GenericResponse:
+def completa_todo(
+    request: Request,
+    numero: int,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
     if complete_todo_by_index(numero):
         return GenericResponse(status="ok", message=f"Todo {numero} completato.")
     return GenericResponse(status="error", message="Numero task non valido.")
 
 
 # ---------------- Budget / Spese ----------------
-@app.get("/budget")
+@app.get("/budget", response_model=GenericResponse)
 @limiter.limit("60/minute")
-def budget(request: Request) -> GenericResponse:
+def budget(request: Request, slug: str = Depends(get_current_profile)) -> GenericResponse:
     return GenericResponse(status="ok", data=get_budget_summary())
 
 
 @app.post("/budget/spesa", response_model=GenericResponse)
 @limiter.limit("30/minute")
-def aggiungi_spesa(request: Request, payload: AddSpesaRequest) -> GenericResponse:
+def aggiungi_spesa(
+    request: Request,
+    payload: AddSpesaRequest,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
     esito = add_spesa(
         importo=float(payload.importo),
         categoria=payload.categoria.strip(),
         descrizione=payload.descrizione.strip(),
-        slug=payload.slug.lower(),
+        slug=slug,
     )
-    return GenericResponse(status="ok", message=esito if isinstance(esito, str) else "Spesa registrata.")
+    return GenericResponse(
+        status="ok",
+        message=esito if isinstance(esito, str) and esito != "ok" else "Spesa registrata.",
+    )
 
 
-# ---------------- Gestione errori globali ----------------
+# ---------------- Notifiche push ----------------
+@app.post("/notifiche/registra", response_model=GenericResponse)
+@limiter.limit("30/minute")
+def registra_notifiche(
+    request: Request,
+    payload: PushRegisterRequest,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    token = payload.token.strip()
+    valid = token.startswith(("ExponentPushToken[", "ExpoPushToken[")) or len(token) > 40
+    if not valid:
+        return GenericResponse(status="error", message="Token push non valido.")
+    device_info = " ".join(part for part in (payload.device.strip(), payload.platform.strip()) if part)
+    ok = save_push_token(slug, token, device_info=device_info, platform=payload.platform)
+    return GenericResponse(
+        status="ok" if ok else "error",
+        message="Notifiche attivate su questo dispositivo." if ok else "Salvataggio token fallito.",
+    )
+
+
+@app.delete("/notifiche/registra", response_model=GenericResponse)
+@limiter.limit("30/minute")
+def elimina_notifica(
+    request: Request,
+    token: str = Query(..., min_length=8, max_length=255),
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    deactivate_push_token(token)
+    return GenericResponse(status="ok", message="Notifiche disattivate su questo dispositivo.")
+
+
+@app.post("/notifiche/test", response_model=GenericResponse)
+@limiter.limit("10/minute")
+def test_notifica(
+    request: Request,
+    payload: PushTestRequest,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    inviati = invia_a_profilo(slug, payload.titolo, payload.messaggio, {"tipo": "test"})
+    if inviati <= 0:
+        return GenericResponse(
+            status="error",
+            message="Nessun dispositivo registrato: attiva le notifiche nell'app e riprova.",
+        )
+    return GenericResponse(status="ok", message=f"Notifica inviata a {inviati} dispositivo/i.")
+
+
+@app.get("/notifiche/dispositivi", response_model=GenericResponse)
+@limiter.limit("30/minute")
+def dispositivi_notifiche(
+    request: Request,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    rows = get_push_tokens(slug)
+    return GenericResponse(
+        status="ok",
+        data=[{"device": row.get("device_info", ""), "platform": row.get("platform", "")} for row in rows],
+    )
+
+
+# ---------------- Impostazioni ----------------
+@app.get("/impostazioni", response_model=GenericResponse)
+@limiter.limit("60/minute")
+def leggi_impostazioni(
+    request: Request,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    return GenericResponse(status="ok", data=get_settings())
+
+
+@app.post("/impostazioni", response_model=GenericResponse)
+@limiter.limit("30/minute")
+def salva_impostazioni(
+    request: Request,
+    payload: SettingsUpdateRequest,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    patch: dict[str, Any] = {}
+    for section in ("automazioni", "notifiche", "soglie"):
+        value = getattr(payload, section)
+        if value:
+            patch[section] = value
+    if not patch:
+        return GenericResponse(status="error", message="Nessuna impostazione da salvare.")
+    updated = update_settings(patch)
+    log.info("Impostazioni aggiornate da %s: %s", slug, list(patch))
+    return GenericResponse(status="ok", message="Impostazioni salvate.", data=updated)
+
+
+@app.get("/automazioni", response_model=GenericResponse)
+@limiter.limit("60/minute")
+def elenca_automazioni(
+    request: Request,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    return GenericResponse(status="ok", data=get_jobs())
+
+
+# ---------------- Italiano ----------------
+@app.get("/italiano/lezione", response_model=GenericResponse)
+@limiter.limit("60/minute")
+def italiano_lezione(
+    request: Request,
+    livello: str = Query(default="B1"),
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    livello_norm = normalizza_livello(livello)
+    lezione = lezione_del_giorno(livello_norm)
+    progresso = get_italian_progress(slug)
+    return GenericResponse(status="ok", data={"lezione": lezione, "progresso": progresso})
+
+
+@app.get("/italiano/quiz", response_model=GenericResponse)
+@limiter.limit("60/minute")
+def italiano_quiz(
+    request: Request,
+    livello: str = Query(default="B1"),
+    n: int = Query(default=5, ge=1, le=10),
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    domande = [
+        {
+            "id": domanda["id"],
+            "livello": domanda["livello"],
+            "domanda": domanda["domanda"],
+            "opzioni": domanda["opzioni"],
+        }
+        for domanda in quiz_per_livello(livello, n)
+    ]
+    return GenericResponse(
+        status="ok",
+        data={"domande": domande, "progresso": get_italian_progress(slug)},
+    )
+
+
+@app.post("/italiano/quiz/valuta", response_model=GenericResponse)
+@limiter.limit("30/minute")
+def italiano_valuta(
+    request: Request,
+    payload: QuizSubmitRequest,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    if not payload.risposte:
+        return GenericResponse(status="error", message="Nessuna risposta inviata.")
+    esito = valuta_quiz([risposta.model_dump() for risposta in payload.risposte])
+    if esito["totale"] == 0:
+        return GenericResponse(status="error", message="Risposte non valide.")
+    add_italian_progress(slug, f"quiz-{payload.livello or 'B1'}", int(esito["punteggio"]))
+    esito["progresso"] = get_italian_progress(slug)
+    return GenericResponse(status="ok", data=esito)
+
+
+@app.get("/italiano/progressi", response_model=GenericResponse)
+@limiter.limit("60/minute")
+def italiano_progressi(
+    request: Request,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    return GenericResponse(
+        status="ok",
+        data={
+            "mio": get_italian_progress(slug),
+            "classifica": get_italian_leaderboard(),
+        },
+    )
+
+
+# ---------------- Integrazioni Google (Gmail + Calendar) ----------------
+@app.get("/integrazioni/google/stato", response_model=GenericResponse)
+@limiter.limit("60/minute")
+def google_stato(
+    request: Request,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    from app.services import google_oauth
+
+    return GenericResponse(status="ok", data=google_oauth.status())
+
+
+@app.get("/integrazioni/google/url", response_model=GenericResponse)
+@limiter.limit("30/minute")
+def google_url(
+    request: Request,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    from app.services import google_oauth
+
+    stato = google_oauth.status()
+    if not stato["configurato"]:
+        return GenericResponse(
+            status="error",
+            message=stato["istruzioni"],
+            data={"configurato": False, "connesso": stato["connesso"]},
+        )
+    try:
+        url = google_oauth.build_auth_url(str(request.base_url))
+    except RuntimeError as exc:
+        return GenericResponse(status="error", message=str(exc))
+    return GenericResponse(status="ok", data={"url": url, "configurato": True})
+
+
+@app.get("/integrazioni/google/callback")
+def google_callback(
+    request: Request,
+    code: str = Query(default=""),
+    state: str = Query(default=""),
+    error: str = Query(default=""),
+):
+    from app.services import google_oauth
+
+    if error or not code:
+        return RedirectResponse(google_oauth.oauth_error_deeplink("annullato"))
+    if not google_oauth.validate_state(state):
+        log.warning("Callback Google con state non valido")
+        return RedirectResponse(google_oauth.oauth_error_deeplink("state"))
+    if not google_oauth.exchange_code(code, str(request.base_url)):
+        return RedirectResponse(google_oauth.oauth_error_deeplink("scambio"))
+    return RedirectResponse(google_oauth.oauth_success_deeplink())
+
+
+@app.post("/integrazioni/google/disconnetti", response_model=GenericResponse)
+@limiter.limit("20/minute")
+def google_disconnetti(
+    request: Request,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    from app.services import google_oauth
+
+    google_oauth.disconnect()
+    return GenericResponse(status="ok", message="Account Google scollegato.")
+
+
+# ---------------- Gestione errori ----------------
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    errors = exc.errors() or []
+    first = errors[0] if errors else {}
+    field = ".".join(str(part) for part in first.get("loc", [])[1:]) or "richiesta"
+    message = f"{field}: {first.get('msg', 'valore non valido')}"
+    log.warning("Validazione fallita su %s: %s", request.url.path, message)
+    return JSONResponse(status_code=422, content={"status": "error", "message": message})
+
+
 @app.exception_handler(HTTPException)
 async def custom_http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     log.warning("HTTP %s: %s", exc.status_code, exc.detail)
@@ -301,8 +768,5 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     log.exception("Eccezione non gestita su %s: %s", request.url.path, exc)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "status": "error",
-            "message": "Errore interno del server. I dettagli sono nel log.",
-        },
+        content={"status": "error", "message": "Errore interno del server. I dettagli sono nel log."},
     )

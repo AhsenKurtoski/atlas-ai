@@ -32,12 +32,22 @@ def _configure_root() -> None:
     formatter = logging.Formatter(fmt, datefmt=datefmt)
 
     handlers: list[logging.Handler] = []
+    # Su Windows la console usa cp1252 e gli emoji nei log farebbero fallire
+    # lo StreamHandler: forziamo UTF-8 (con fallback sicuro).
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")  # type: ignore[attr-defined]
+    except (ValueError, OSError):
+        pass
     stream = logging.StreamHandler(sys.stdout)
     stream.setFormatter(formatter)
     handlers.append(stream)
 
     try:
-        log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+        # backend/logs/atlas.log (non dentro il package app/)
+        log_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs"
+        )
         os.makedirs(log_dir, exist_ok=True)
         file = RotatingFileHandler(
             os.path.join(log_dir, "atlas.log"),

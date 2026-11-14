@@ -1,13 +1,41 @@
-import random
+"""
+Modulo italiano (compatibilità).
 
-def generate_italian_quiz() -> dict:
-    """Genera un quiz di italiano per i genitori (Macedone -> Italiano)."""
-    quizzes = [
-        {"question": "Come si dice 'Buon appetito' in Macedone?", "options": ["Dobar apetit", "Zdravo", "Blagodaram"], "answer": "Dobar apetit"},
-        {"question": "Cosa significa 'Fermata dell'autobus'?", "options": ["Avtobuska postojka", "Bolnica", "Banka"], "answer": "Avtobuska postojka"}
-    ]
-    return random.choice(quizzes)
+⚠️ DEPRECATO: i contenuti reali (lezioni + quiz + valutazione) vivono in
+`app.tools.italian`. Questo file resta solo come re-export per eventuali
+import storici: non contiene più quiz inventati né funzioni placeholder.
+"""
+from __future__ import annotations
 
-def grammar_correction(text: str) -> str:
-    """Funzione di supporto chiamata dall'AI se il genitore chiede esplicitamente di essere corretto."""
-    return f"Testo analizzato per correzioni: {text}. Chiedere all'LLM di restituire le correzioni."
+from typing import Any
+
+from app.tools.italian import (
+    LIVELLI,
+    lezione_del_giorno,
+    normalizza_livello,
+    quiz_per_livello,
+    valuta_quiz,
+)
+
+__all__ = [
+    "LIVELLI",
+    "generate_italian_quiz",
+    "lezione_del_giorno",
+    "normalizza_livello",
+    "valuta_quiz",
+]
+
+
+def generate_italian_quiz(livello: str = "B1") -> dict[str, Any]:
+    """Ritorna la prima domanda del quiz del giorno per il livello indicato."""
+    domande = quiz_per_livello(livello, 1)
+    if not domande:
+        return {"question": "", "options": [], "answer": None}
+    domanda = domande[0]
+    return {
+        "question": domanda["domanda"],
+        "options": domanda["opzioni"],
+        "answer": domanda["opzioni"][domanda["risposta"]],
+        "id": domanda["id"],
+        "level": domanda["livello"],
+    }

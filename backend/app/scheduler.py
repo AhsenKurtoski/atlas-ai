@@ -1,205 +1,398 @@
 """
 Scheduler delle automazioni ATLAS AI v3.0 (APScheduler).
 
-⚠️  NOTA SULL'AVVIO:
-Lo scheduler NON viene più avviato automaticamente all'import del modulo.
-Chiamare esplicitamente `start_scheduler()` dal lifespan di FastAPI
-(come in main.py). Questo evita side-effect durante i test o import
-non controllati.
+Ogni automazione esegue lavoro reale (meteo, crypto, budget, todo, email,
+progressi italiano) e invia notifiche push ai dispositivi registrati.
+Le automazioni disattivate in Impostazioni vengono saltate.
+
+Lo scheduler NON parte all'import: viene avviato dal lifespan di FastAPI.
 """
 from __future__ import annotations
 
 import datetime
-import json
-import os
 import threading
-from typing import Any
+from typing import Any, Callable, Optional
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from app.core.database import (
+    automation_enabled,
+    fetch_profiles,
+    get_budget_summary,
+    get_italian_leaderboard,
+    get_settings,
+    get_todos,
+)
 from app.core.logging_config import get_logger
-from app.tools.finance import get_crypto_price, riepilogo_budget
-from app.tools.travel import get_weather
+from app.core.scheduler_lock import ProcessLock
+from app.core.settings import LOCAL_DB_DIR, default_city, scheduler_timezone
+from app.notifiche import invia_a_profilo, invia_a_tutti
 from app.tools.family import get_family_todos
+from app.tools.finance import get_crypto_price, riepilogo_budget
+from app.tools.italian import lezione_del_giorno
+from app.tools.travel import get_weather
 
 log = get_logger(__name__)
 
-PUSH_TOKENS_FILE = "push_tokens.json"
-
-# --- Singleton lazy ---
-_scheduler: BackgroundScheduler | None = None
+_scheduler: Optional[BackgroundScheduler] = None
 _initialized = threading.Event()
 _JOB_IDS: set[str] = set()
 
+# Un solo processo per host esegue i job (evita notifiche duplicate con più worker).
+_lock = ProcessLock(LOCAL_DB_DIR / ".scheduler.lock")
 
-def _log(msg: str) -> None:
-    log.info("[SCHED] %s", msg)
+JOB_KEYS: tuple[str, ...] = (
+    "lezione_italiano",
+    "briefing_giornaliero",
+    "controllo_email",
+    "ricorda_acqua",
+    "price_watcher",
+    "report_settimanale",
+    "classifica_studio",
+    "ombrello_smart",
+    "promemoria_pillola",
+    "smart_calendar",
+    "crypto_tracker",
+)
 
 
-def _get_tokens() -> dict[str, Any]:
-    if os.path.exists(PUSH_TOKENS_FILE):
-        try:
-            with open(PUSH_TOKENS_FILE, encoding="utf-8") as f:
-                return json.load(f)
-        except (OSError, json.JSONDecodeError):
-            log.warning("%s non leggibile", PUSH_TOKENS_FILE)
-    return {}
+def automazioni_totali() -> int:
+    """Numero di automazioni definite (indipendente dal worker che le esegue)."""
+    return len(JOB_KEYS)
 
 
-# ==============================
-#  AUTOMAZIONI MATTUTINE / JOB
-# ==============================
+def _log(message: str) -> None:
+    log.info("[SCHED] %s", message)
+
+
+def _enabled(name: str) -> bool:
+    return automation_enabled(name)
+
+
+def _safe(step: str, action: Callable[[], Any]) -> Any:
+    """Esegue un passo dell'automazione senza far crashare il job."""
+    try:
+        return action()
+    except Exception as exc:  # pragma: no cover - dipende da servizi esterni
+        log.error("%s fallito: %s", step, exc)
+        return None
+
+
+# ======================================================================
+#  AUTOMAZIONI
+# ======================================================================
 def job_lezione_italiano() -> None:
-    _log("📚 Lezione italiano: invio notifiche a Mamma e Papà")
-    tokens = _get_tokens()
-    for p in ("mamma", "papa"):
-        if p in tokens:
-            _log(f"   Notifica lezione inviata a {p}")
+    """Invia la lezione di italiano del giorno ai profili che stanno imparando."""
+    if not _enabled("lezione_italiano"):
+        return
+    _log("📚 Lezione italiano del giorno")
+    for slug, profilo in fetch_profiles().items():
+        livello = str(profilo.get("livello_italiano") or "B1")
+        if livello in ("Madrelingua", "C1", "C2"):
+            continue
+        lezione = lezione_del_giorno(livello)
+        _safe(
+            "invio lezione",
+            lambda s=slug, l=lezione: invia_a_profilo(
+                s,
+                titolo=f"Lezione di oggi · {l['livello']}",
+                messaggio=f"{l['titolo']}: {l['spiegazione'][:140]}…",
+                dati={"tipo": "lezione_italiano", "lezione_id": l["id"]},
+            ),
+        )
 
 
 def job_briefing_giornaliero() -> None:
-    _log("☀️ Briefing mattutino per tutta la famiglia")
-    try:
-        meteo = get_weather("Milano")
-        crypto = get_crypto_price("bitcoin")
-        _log(f"   Briefing: {meteo[:80]} | {str(crypto)[:80]}...")
-    except Exception as exc:
-        log.error("Briefing fallito: %s", exc)
+    """Briefing mattutino: meteo, todo pendenti e spesa del mese."""
+    if not _enabled("briefing_giornaliero"):
+        return
+    _log("☀️ Briefing mattutino")
+    citta = default_city()
+    meteo = _safe("meteo briefing", lambda: get_weather(citta)) or "Meteo non disponibile"
+    pending = [todo for todo in get_todos() if not todo.get("is_completed")]
+    spesa = (get_budget_summary(only_month=True) or {}).get("totale", 0.0)
+    messaggio = f"{meteo}\n🛒 {len(pending)} cose da fare · 💰 €{float(spesa):.2f} questo mese"
+    _safe(
+        "invio briefing",
+        lambda: invia_a_tutti("Buongiorno! ☀️", messaggio, {"tipo": "briefing"}),
+    )
 
 
 def job_controllo_email() -> None:
-    _log("📧 Controllo email (ogni 15 min) - Notifica se urgenti")
+    """Controlla le email Gmail collegate e notifica le novità (solo se connesso)."""
+    if not _enabled("controllo_email"):
+        return
+    from app.services import google_oauth
+
+    if not google_oauth.status()["connesso"]:
+        log.debug("Controllo email saltato: account Google non collegato.")
+        return
+    from app.tools.communication import gmail_leggi_email
+
+    esito = _safe("lettura email", lambda: gmail_leggi_email(3))
+    if not esito or esito.startswith("⚠️") or esito.startswith("📭"):
+        return
+    _safe(
+        "invio notifica email",
+        lambda: invia_a_profilo("io", "Nuove email 📧", esito[:400], {"tipo": "email"}),
+    )
 
 
 def job_ricorda_acqua() -> None:
-    _log("💧 Promemoria acqua per tutti i membri")
-    tokens = _get_tokens()
-    for p in tokens:
-        _log(f"   Promemoria acqua inviato a {p}")
+    """Promemoria idratazione, solo nelle ore diurne."""
+    if not _enabled("promemoria_acqua"):
+        return
+    ora = datetime.datetime.now().hour
+    if not (8 <= ora <= 22):
+        return
+    _log("💧 Promemoria acqua")
+    _safe(
+        "invio promemoria acqua",
+        lambda: invia_a_tutti("💧 Bevi un bicchiere d'acqua", "Pausa idratazione di famiglia!", {"tipo": "acqua"}),
+    )
 
 
 def job_price_watcher() -> None:
-    _log("✈️ Price watcher: controllo prezzi voli e crypto")
-    try:
-        btc = get_crypto_price("bitcoin")
-        eth = get_crypto_price("ethereum")
-        _log(f"   BTC: {str(btc)[:80]}... | ETH: {str(eth)[:80]}...")
-    except Exception as exc:
-        log.error("Price watcher fallito: %s", exc)
+    """Controlla crypto e avvisa solo se la variazione supera la soglia."""
+    if not _enabled("price_watcher"):
+        return
+    _log("📈 Price watcher crypto")
+    settings = get_settings() or {}
+    soglia = float(((settings.get("soglie") or {}).get("crypto_variazione_percent")) or 5.0)
+
+    for symbol, nome in (("bitcoin", "Bitcoin"), ("ethereum", "Ethereum")):
+        esito = _safe(f"prezzo {symbol}", lambda s=symbol: get_crypto_price(s))
+        if not esito or "%" not in str(esito):
+            continue
+        try:
+            variazione = float(str(esito).split("24h:")[-1].replace("%", "").replace("📈", "").replace("📉", "").strip())
+        except ValueError:
+            continue
+        if abs(variazione) >= soglia:
+            _safe(
+                "invio alert crypto",
+                lambda n=nome, e=esito, v=variazione: invia_a_tutti(
+                    f"{n} {'su' if v >= 0 else 'giù'} del {abs(v):.1f}%",
+                    str(e),
+                    {"tipo": "crypto"},
+                ),
+            )
 
 
 def job_report_settimanale() -> None:
-    _log("📊 Report settimanale famiglia")
-    try:
-        budget = riepilogo_budget()
-        todos = get_family_todos()
-        _log(f"   Budget: {str(budget)[:120]}...")
-        _log(f"   Todo: {str(todos)[:120]}...")
-    except Exception as exc:
-        log.error("Report settimanale fallito: %s", exc)
+    """Report settimanale di budget, todo e italiano."""
+    if not _enabled("report_settimanale"):
+        return
+    _log("📊 Report settimanale")
+    budget = _safe("riepilogo budget", riepilogo_budget) or "Budget non disponibile"
+    todos = _safe("lista todo", get_family_todos) or "Lista non disponibile"
+    _safe(
+        "invio report",
+        lambda: invia_a_tutti(
+            "Report settimanale 📊",
+            f"{budget}\n\n{todos}"[:700],
+            {"tipo": "report"},
+        ),
+    )
 
 
 def job_classifica_studio() -> None:
-    _log("🏆 Classifica settimanale studio italiano")
+    """Classifica di studio della settimana."""
+    if not _enabled("classifica_studio"):
+        return
+    _log("🏆 Classifica studio")
+    board = get_italian_leaderboard()
+    if not board:
+        return
+    righe = [f"{index}. {row['nome']}: {row['punti']} punti" for index, row in enumerate(board[:5], 1)]
+    _safe(
+        "invio classifica",
+        lambda: invia_a_tutti("Classifica italiano 🏆", "\n".join(righe), {"tipo": "classifica"}),
+    )
 
 
-def _add_job_once(scheduler: BackgroundScheduler, job_id: str, fn, trigger, **kwargs) -> None:
-    """Aggiunge un job solo se non già presente (previene duplicati)."""
-    if job_id in _JOB_IDS:
+def job_ombrello_smart() -> None:
+    """Avvisa se oggi pioverà (meteo reale, Open-Meteo)."""
+    if not _enabled("ombrello_smart"):
         return
-    if scheduler.get_job(job_id):
+    meteo = _safe("meteo ombrello", lambda: get_weather(default_city()))
+    if not meteo or "%" not in str(meteo):
         return
-    scheduler.add_job(fn, trigger, id=job_id, **kwargs)
+    try:
+        pioggia = int(str(meteo).split("Pioggia oggi:")[-1].split("%")[0].strip())
+    except ValueError:
+        return
+    if pioggia >= 40:
+        _safe(
+            "invio avviso pioggia",
+            lambda: invia_a_tutti("☔ Oggi piove", f"{meteo}\nPrendi l'ombrello!", {"tipo": "pioggia"}),
+        )
+
+
+def job_promemoria_pillola() -> None:
+    """Promemoria quotidiano salute (disattivo di default)."""
+    if not _enabled("promemoria_pillola"):
+        return
+    _safe(
+        "invio promemoria pillola",
+        lambda: invia_a_tutti("💊 Promemoria salute", "È ora del promemoria quotidiano.", {"tipo": "salute"}),
+    )
+
+
+def job_controllo_calendario() -> None:
+    """Legge l'agenda di oggi dal Calendar collegato e la riassume."""
+    if not _enabled("smart_calendar"):
+        return
+    from app.services import google_oauth
+
+    if not google_oauth.status()["connesso"]:
+        log.debug("Smart calendar saltato: Google Calendar non collegato.")
+        return
+    from app.tools.communication import calendar_agenda
+
+    agenda = _safe("lettura agenda", lambda: calendar_agenda())
+    if not agenda or "nessun evento" in agenda.lower():
+        return
+    _safe(
+        "invio agenda",
+        lambda: invia_a_profilo("io", "Agenda di oggi 📅", agenda[:400], {"tipo": "calendario"}),
+    )
+
+
+def job_crypto_tracker() -> None:
+    """Log orario dei prezzi (senza notifiche: evita spam)."""
+    if not _enabled("crypto_tracker"):
+        return
+    btc = _safe("crypto btc", lambda: get_crypto_price("bitcoin"))
+    log.info("📈 Crypto orario: %s", str(btc)[:120])
+
+
+# ======================================================================
+#  REGISTRAZIONE JOB
+# ======================================================================
+def _add_job_once(scheduler: BackgroundScheduler, job_id: str, func, trigger, **kwargs) -> None:
+    if job_id in _JOB_IDS or scheduler.get_job(job_id):
+        return
+    scheduler.add_job(func, trigger, id=job_id, coalesce=True, max_instances=1, **kwargs)
     _JOB_IDS.add(job_id)
 
 
 def _register_jobs(scheduler: BackgroundScheduler) -> None:
-    # 📚 Lezione italiano - ogni mattina 7:30
-    _add_job_once(scheduler, "lezione_italiano", job_lezione_italiano,
-                  CronTrigger(hour=7, minute=30, timezone="Europe/Rome"))
-    _log("📚 Lezione italiano alle 7:30")
+    tz = scheduler_timezone()
 
-    # ☀️ Briefing giornaliero - ogni mattina 8:00
-    _add_job_once(scheduler, "briefing_giornaliero", job_briefing_giornaliero,
-                  CronTrigger(hour=8, minute=0, timezone="Europe/Rome"))
-    _log("☀️ Briefing giornaliero alle 8:00")
+    _add_job_once(
+        scheduler, "lezione_italiano", job_lezione_italiano,
+        CronTrigger(hour=7, minute=30, timezone=tz),
+    )
+    _add_job_once(
+        scheduler, "briefing_giornaliero", job_briefing_giornaliero,
+        CronTrigger(hour=8, minute=0, timezone=tz),
+    )
+    _add_job_once(
+        scheduler, "controllo_email", job_controllo_email,
+        IntervalTrigger(minutes=15),
+    )
+    _add_job_once(
+        scheduler, "ricorda_acqua", job_ricorda_acqua,
+        IntervalTrigger(hours=2),
+    )
+    _add_job_once(
+        scheduler, "price_watcher", job_price_watcher,
+        IntervalTrigger(hours=6),
+    )
+    _add_job_once(
+        scheduler, "report_settimanale", job_report_settimanale,
+        CronTrigger(day_of_week="mon", hour=9, minute=0, timezone=tz),
+    )
+    _add_job_once(
+        scheduler, "classifica_studio", job_classifica_studio,
+        CronTrigger(day_of_week="fri", hour=18, minute=0, timezone=tz),
+    )
+    _add_job_once(
+        scheduler, "ombrello_smart", job_ombrello_smart,
+        CronTrigger(hour=6, minute=45, timezone=tz),
+    )
+    _add_job_once(
+        scheduler, "promemoria_pillola", job_promemoria_pillola,
+        CronTrigger(hour=21, minute=0, timezone=tz),
+    )
+    _add_job_once(
+        scheduler, "smart_calendar", job_controllo_calendario,
+        IntervalTrigger(hours=1),
+    )
+    _add_job_once(
+        scheduler, "crypto_tracker", job_crypto_tracker,
+        IntervalTrigger(hours=1),
+    )
+    _log(f"✅ Registrate {len(_JOB_IDS)} automazioni")
 
-    # 📧 Controllo email - ogni 15 minuti
-    _add_job_once(scheduler, "controllo_email", job_controllo_email,
-                  IntervalTrigger(minutes=15))
-    _log("📧 Controllo email ogni 15 minuti")
 
-    # 💧 Acqua - ogni 2 ore
-    _add_job_once(scheduler, "ricorda_acqua", job_ricorda_acqua,
-                  IntervalTrigger(hours=2))
-    _log("💧 Promemoria acqua ogni 2 ore")
+def start_scheduler(run_test: bool = False) -> Optional[BackgroundScheduler]:
+    """Avvia (o recupera) lo scheduler. Nessuna chiamata di rete all'avvio.
 
-    # 📊 Price watcher - ogni 6 ore
-    _add_job_once(scheduler, "price_watcher", job_price_watcher,
-                  IntervalTrigger(hours=6))
-    _log("📊 Price watcher ogni 6 ore")
-
-    # 📊 Report settimanale - Lunedì 9:00
-    _add_job_once(scheduler, "report_settimanale", job_report_settimanale,
-                  CronTrigger(day_of_week="mon", hour=9, minute=0, timezone="Europe/Rome"))
-    _log("📊 Report settimanale lunedì 9:00")
-
-    # 🏆 Classifica studio - Venerdì 18:00
-    _add_job_once(scheduler, "classifica_studio", job_classifica_studio,
-                  CronTrigger(day_of_week="fri", hour=18, minute=0, timezone="Europe/Rome"))
-    _log("🏆 Classifica studio venerdì 18:00")
-
-    # 📈 Crypto tracker - ogni ora
-    def _crypto_tracker():
-        try:
-            _log(f"📈 Crypto: {str(get_crypto_price('bitcoin'))[:100]}")
-        except Exception as exc:
-            log.error("Crypto tracker: %s", exc)
-
-    _add_job_once(scheduler, "crypto_tracker_hourly", _crypto_tracker,
-                  IntervalTrigger(hours=1))
-    _log("📈 Crypto tracker ogni ora")
-
-
-def start_scheduler(run_test: bool = True) -> BackgroundScheduler:
-    """Avvia (o recupera) lo scheduler e registra i job la prima volta.
-
-    Args:
-        run_test: Esegue subito job_price_watcher una sola volta per smoke test.
+    Con più worker solo il processo che ottiene il lock esegue i job: gli
+    altri servono le API ma non duplicano le notifiche.
     """
     global _scheduler
     if _scheduler is None:
-        _scheduler = BackgroundScheduler(timezone="Europe/Rome", daemon=True)
-        _scheduler.start()
-        _register_jobs(_scheduler)
-        _log("✅ Scheduler avviato con %d automazioni!", len(_JOB_IDS))
-        if run_test:
-            _log("🧪 Test automazioni: esecuzione price watcher...")
-            try:
-                job_price_watcher()
-            except Exception as exc:
-                log.warning("Test price_watcher fallito (normale se Supabase/API offline): %s", exc)
-        _initialized.set()
+        if not _lock.acquire():
+            log.warning(
+                "⏭️ Scheduler già attivo in un altro processo: questo worker non eseguirà i job."
+            )
+            return None
+        try:
+            _scheduler = BackgroundScheduler(timezone=scheduler_timezone(), daemon=True)
+            _scheduler.start()
+            _register_jobs(_scheduler)
+            _initialized.set()
+        except Exception:
+            _lock.release()
+            _scheduler = None
+            raise
     else:
-        # Assicuriamoci che tutti i job ci siano (es. hot reload)
         _register_jobs(_scheduler)
         if not _scheduler.running:
             _scheduler.start()
+    if run_test:
+        _log("🧪 Test automazioni disabilitato di default (nessuna chiamata di rete all'avvio).")
     return _scheduler
 
 
-def get_scheduler() -> BackgroundScheduler | None:
-    """Restituisce lo scheduler solo se già avviato."""
+def get_scheduler() -> Optional[BackgroundScheduler]:
+    """Scheduler attivo (None se non ancora avviato)."""
     return _scheduler if _initialized.is_set() else None
 
 
+def get_jobs() -> list[dict[str, Any]]:
+    """Elenco job con prossima esecuzione (per l'endpoint /automazioni)."""
+    scheduler = get_scheduler()
+    if not scheduler:
+        return []
+    out: list[dict[str, Any]] = []
+    for job in scheduler.get_jobs():
+        next_run = getattr(job, "next_run_time", None)
+        out.append(
+            {
+                "id": job.id,
+                "prossima": next_run.isoformat() if next_run else None,
+                "attiva": automation_enabled(job.id),
+            }
+        )
+    return sorted(out, key=lambda item: item["id"])
+
+
 def stop_scheduler() -> None:
-    """Ferma lo scheduler (utile in fase di shutdown / test tear-down)."""
+    """Ferma lo scheduler e consente un riavvio pulito (usato nei test)."""
     global _scheduler
-    if _scheduler and _scheduler.running:
-        _scheduler.shutdown(wait=False)
-        log.info("Scheduler fermato.")
+    if _scheduler is not None:
+        try:
+            if _scheduler.running:
+                _scheduler.shutdown(wait=False)
+        except Exception as exc:  # pragma: no cover
+            log.warning("Errore arresto scheduler: %s", exc)
+    _scheduler = None
     _initialized.clear()
     _JOB_IDS.clear()
+    _lock.release()

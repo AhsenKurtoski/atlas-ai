@@ -1,12 +1,14 @@
 """
 Tools famiglia per ATLAS AI v3.0 (lista todo / spesa, push, barzellette, traduzioni).
 
-I TODO vengono salvati in Supabase (family_todos) tramite il modulo database,
-con fallback trasparente su file locale. Non usiamo più todos.json diretto.
+I todo sono salvati in Supabase (`family_todos`) con fallback trasparente su
+file locale. Le notifiche push vengono inviate ai dispositivi realmente
+registrati (Expo Push / FCM), non simulate.
 """
 from __future__ import annotations
 
 import random
+from typing import Any
 from urllib.parse import quote
 
 import requests
@@ -14,22 +16,49 @@ import requests
 from app.core.database import (
     add_todo as _db_add_todo,
     complete_todo_by_index as _db_complete_todo,
+    fetch_profiles,
     get_todos as _db_get_todos,
 )
 from app.core.logging_config import get_logger
 
 log = get_logger(__name__)
 
+# Nomi lingua → codice ISO per il servizio di traduzione
+_LINGUE = {
+    "italiano": "it",
+    "inglese": "en",
+    "albanese": "sq",
+    "macedone": "mk",
+    "spagnolo": "es",
+    "francese": "fr",
+    "tedesco": "de",
+    "portoghese": "pt",
+    "rumeno": "ro",
+    "arabo": "ar",
+    "cinese": "zh",
+    "giapponese": "ja",
+    "russo": "ru",
+    "ucraino": "uk",
+    "greco": "el",
+    "turco": "tr",
+}
+
 
 # ---------------- TODO / Lista spesa ----------------
-def add_family_todo(task: str, assegnato_a: str = "Tutti") -> str:
-    """Aggiunge un task alla lista della spesa / cose da fare condivisa."""
+def add_family_todo(task: str, assegnato_a: str = "Tutti", creato_da: str = "io") -> str:
+    """Aggiunge un task alla lista della spesa / cose da fare condivisa.
+
+    Args:
+        task: Testo del task (es. "Latte intero").
+        assegnato_a: Membro a cui è assegnato (default "Tutti").
+        creato_da: Slug del profilo che crea il task.
+    """
     if not task or not task.strip():
         return "Cosa devo aggiungere? Es: 'Aggiungi in lista: Latte intero'"
     task_clean = task.strip()[:500]
     who = (assegnato_a or "Tutti").strip()[:100] or "Tutti"
     try:
-        _db_add_todo(task=task_clean, created_by_slug="io", assegnato_a=who)
+        _db_add_todo(task=task_clean, created_by_slug=creato_da, assegnato_a=who)
     except Exception as exc:
         log.exception("add_family_todo errore DB: %s", exc)
         return f"Non sono riuscito ad aggiungere il task: {exc}"
@@ -38,7 +67,11 @@ def add_family_todo(task: str, assegnato_a: str = "Tutti") -> str:
 
 
 def get_family_todos(filtro: str = "") -> str:
-    """Mostra la lista task. Usa filtro='da fare' per i soli non completati."""
+    """Mostra la lista task condivisa.
+
+    Args:
+        filtro: "da fare" / "pending" per vedere solo i task non completati.
+    """
     only_pending = (filtro or "").lower() in ("da_fare", "pending", "attivi", "da fare")
     try:
         todos = _db_get_todos(only_pending=only_pending)
@@ -50,51 +83,84 @@ def get_family_todos(filtro: str = "") -> str:
         return "🎉 La lista è vuota! Tutto fatto."
 
     righe: list[str] = []
-    for i, t in enumerate(todos, 1):
-        task = t.get("task_text") or t.get("task") or "(senza descrizione)"
-        done = bool(t.get("is_completed", t.get("done", False)))
-        who = t.get("assegnato_a") or "Tutti"
-        status = "✅" if done else "⬜"
-        who_extra = f" ({who})" if who and who != "Tutti" else ""
-        righe.append(f"{status} {i}. {task}{who_extra}")
+    for index, todo in enumerate(todos, 1):
+        task = todo.get("task_text") or todo.get("task") or "(senza descrizione)"
+        done = bool(todo.get("is_completed", todo.get("done", False)))
+        who = todo.get("assegnato_a") or "Tutti"
+        stato = "✅" if done else "⬜"
+        extra = f" ({who})" if who and who != "Tutti" else ""
+        righe.append(f"{stato} {index}. {task}{extra}")
 
-    titolo = "📋 Lista completa" if not only_pending else "📋 Task da fare"
+    titolo = "📋 Task da fare" if only_pending else "📋 Lista completa"
     return f"{titolo}:\n" + "\n".join(righe)
 
 
 def completa_todo(numero: int) -> str:
-    """Marca completato l'n-esimo task della lista (1-based)."""
+    """Marca completato l'n-esimo task della lista (numerazione che vedi nell'elenco).
+
+    Args:
+        numero: Numero del task nell'elenco (parte da 1).
+    """
     try:
-        idx = int(numero)
+        index = int(numero)
     except (TypeError, ValueError):
         return "Numero task non valido. Usa il numero visibile nella lista."
     try:
-        ok = _db_complete_todo(idx)
+        ok = _db_complete_todo(index)
     except Exception as exc:
         log.exception("completa_todo: %s", exc)
-        return f"Errore durante la rimozione: {exc}"
+        return f"Errore durante il completamento: {exc}"
     if not ok:
-        return f"Non c'è nessun task numero {idx} nella lista."
-    return f"✅ Task {idx} completato! Ottimo lavoro 💪"
+        return f"Non c'è nessun task numero {index} nella lista."
+    return f"✅ Task {index} completato! Ottimo lavoro 💪"
 
 
-# ---------------- Push notifiche (mock se Firebase non configurato) ----------------
+# ---------------- Push notifiche reali ----------------
+def _resolve_profile(membro: str) -> tuple[str, str] | None:
+    """Trova (slug, nome) del membro per slug o nome."""
+    target = (membro or "").strip().lower()
+    if not target:
+        return None
+    for slug, profilo in fetch_profiles().items():
+        if target == slug.lower() or target == str(profilo.get("nome", "")).lower():
+            return slug, str(profilo.get("nome", slug))
+    return None
+
+
 def invia_push_famigliare(membro: str, messaggio: str) -> str:
-    """Invia una notifica push a un membro. Richiede token dispositivo + Firebase."""
+    """Invia una notifica push reale a un membro della famiglia.
+
+    Args:
+        membro: Nome o slug del membro (es. "mamma").
+        messaggio: Testo della notifica.
+    """
     if not membro or not messaggio:
         return "Dimmi a chi e cosa devo inviare. Es: 'Invia a mamma: Ricorda la medicina'"
-    try:
-        from app.notifiche import invia_push
 
-        # TODO: recuperare token del membro da DB. Per ora mandiamo a me stesso.
-        token = os.getenv("PUSH_TOKEN_DEMO", "")
-        if token:
-            ok = invia_push(token, titolo=f"Messaggio da {membro}", messaggio=messaggio, dati={"da": membro})
-            if ok:
-                return f"📬 Notifica inviata a {membro}."
+    resolved = _resolve_profile(membro)
+    if not resolved:
+        return f"Non conosco nessun membro chiamato '{membro}'."
+
+    slug, nome = resolved
+    try:
+        from app.notifiche import invia_a_profilo
+
+        inviati = invia_a_profilo(
+            slug,
+            titolo=f"Messaggio per {nome}",
+            messaggio=messaggio[:500],
+            dati={"tipo": "famiglia", "da": "ATLAS"},
+        )
     except Exception as exc:
-        log.warning("Push fallita (membro=%s): %s", membro, exc)
-    return f"📬 Notifica accodata per {membro}: {messaggio} (servizio push non ancora configurato)."
+        log.exception("Push fallita (membro=%s): %s", slug, exc)
+        return f"Non sono riuscito a inviare la notifica a {nome}: {exc}"
+
+    if inviati <= 0:
+        return (
+            f"⚠️ Nessun dispositivo registrato per {nome}. "
+            "Apri l'app sul suo telefono e attiva le notifiche in Impostazioni."
+        )
+    return f"📬 Notifica inviata a {nome} ({inviati} dispositivo/i)."
 
 
 # ---------------- Intrattenimento ----------------
@@ -108,20 +174,20 @@ _JOKE_FALLBACK = [
 
 
 def get_random_joke() -> str:
-    """Una barzelletta (API italiana con fallback locale)."""
+    """Racconta una barzelletta (JokeAPI in italiano con fallback locale)."""
     try:
-        resp = requests.get(
-            "https://v2.jokeapi.dev/joke/Any?type=single&lang=it",
-            timeout=5,
+        response = requests.get(
+            "https://v2.jokeapi.dev/joke/Any",
+            params={"type": "single", "lang": "it"},
+            timeout=6,
         )
-        resp.raise_for_status()
-        data = resp.json()
-        joke = data.get("joke")
+        response.raise_for_status()
+        joke = response.json().get("joke")
         if joke:
             return str(joke)
     except requests.RequestException as exc:
         log.debug("get_random_joke API fallita: %s", exc)
-    except Exception as exc:
+    except (ValueError, TypeError) as exc:
         log.exception("get_random_joke: %s", exc)
     return random.choice(_JOKE_FALLBACK)
 
@@ -129,30 +195,65 @@ def get_random_joke() -> str:
 def get_advice() -> str:
     """Un breve consiglio o frase motivazionale."""
     try:
-        resp = requests.get("https://api.adviceslip.com/advice", timeout=5)
-        resp.raise_for_status()
-        data = resp.json()
-        advice = data.get("slip", {}).get("advice")
+        response = requests.get("https://api.adviceslip.com/advice", timeout=6)
+        response.raise_for_status()
+        advice = (response.json().get("slip") or {}).get("advice")
         if advice:
             return f"💡 Consiglio: {advice}"
     except requests.RequestException as exc:
         log.debug("get_advice API fallita: %s", exc)
-    except Exception as exc:
+    except (ValueError, TypeError, KeyError) as exc:
         log.exception("get_advice: %s", exc)
     return "💡 Ricorda: la costanza quotidiana vince sulla quantità una tantum."
 
 
-# ---------------- Traduzioni ----------------
-def traduci_testo(testo: str, lingua: str) -> str:
-    """Richiede a Gemini di tradurre (tramite il prompt task-specifico)."""
+# ---------------- Traduzioni (MyMemory, gratuito) ----------------
+def _lang_code(lingua: str) -> str:
+    value = (lingua or "").strip().lower()
+    if value in _LINGUE:
+        return _LINGUE[value]
+    if len(value) == 2:
+        return value
+    return "en"
+
+
+def traduci_testo(testo: str, lingua: str, lingua_origine: str = "it") -> str:
+    """Traduce un testo usando MyMemory (servizio gratuito, nessuna chiave).
+
+    Args:
+        testo: Testo da tradurre.
+        lingua: Lingua di destinazione (es. "albanese" oppure "sq").
+        lingua_origine: Lingua di partenza (default "it").
+    """
     if not testo or not lingua:
         return "Dimmi testo e lingua di destinazione. Es: 'Traduci Ciao mamma in Albanese'."
+
+    source = _lang_code(lingua_origine)
+    target = _lang_code(lingua)
+    if source == target:
+        return f"🌍 Il testo è già in {lingua}: {testo}"
+
+    try:
+        response = requests.get(
+            "https://api.mymemory.translated.net/get",
+            params={"q": testo[:500], "langpair": f"{source}|{target}"},
+            timeout=12,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        translated = (payload.get("responseData") or {}).get("translatedText")
+        if isinstance(translated, str) and translated.strip() and "MYMEMORY WARNING" not in translated.upper():
+            return f"🌍 Traduzione ({source.upper()} → {target.upper()}): {translated.strip()}"
+        log.warning("MyMemory risposta non valida: %s", str(payload)[:200])
+    except requests.RequestException as exc:
+        log.warning("traduci_testo rete: %s", exc)
+    except (ValueError, TypeError) as exc:
+        log.exception("traduci_testo: %s", exc)
+
     return (
-        f"[TRADUZIONE] Traduci il testo seguente in {lingua}. "
-        f"Mostra PRIMA la traduzione e POI, se il livello d'italiano dell'utente è basso, "
-        f"una nota breve che spieghi parole o costruzioni difficili.\n\n"
-        f"Testo da tradurre:\n{testo}"
+        "⚠️ Servizio di traduzione temporaneamente non raggiungibile. "
+        "Riprova tra poco: nessuna traduzione inventata."
     )
 
 
-import os  # noqa: E402 - usato solo in caso reale di push
+_ = (Any, quote)  # import mantenuti per compatibilità con estensioni future

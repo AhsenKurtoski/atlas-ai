@@ -43,6 +43,9 @@ dist/
 web-build/
 frontend/dist/
 frontend/web-build/
+frontend/.export-android/
+frontend/.export-ios/
+frontend/.export-*/
 *.apk
 *.aab
 *.ipa

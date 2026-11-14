@@ -41,11 +41,11 @@ FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
 
 -- Seed profili standard (pin_hash = bcrypt dei PIN di default, da cambiare in produzione!)
 INSERT INTO profiles (slug, nome, lingua_madre, livello_italiano, pin_hash) VALUES
-    ('io',         'Tu (Admin)',    'Italiano', 'C1',         '$2b$12$xM7p5Fm5j3ZbR3kL9nQ0VuxVHEbK7yGj5vWzQ8xR9pT2sU4dI6Z7O'), -- 0000
-    ('mamma',      'Mamma',         'Albanese', 'B1',         '$2b$12$aN2pQv8lKx4zC7hB9mS1DuPEsL3rY6tG0wFqH5nV2jK9sL8xM4nB6'), -- 1111
-    ('papa',       'Papà',          'Albanese', 'A2',         '$2b$12$cP4vNb7zKf3rT9qL0mS8WuODgJ2kY6hX1cBnV5jM0pS9aK7lF3yQ8'), -- 2222
-    ('fratello1',  'Fratello 1',    'Italiano', 'Madrelingua','$2b$12$eR6tXc9mHz2pY4qN7vB0JsAFk1lO8wD5iUoT3zG9rC6sM2hK7jB0V'), -- 3333
-    ('fratello2',  'Fratello 2',    'Italiano', 'Madrelingua','$2b$12$gS8yVc4mJz6rT1kN9vX2QpWEbH7fL0kD9oM5aC3nR7iE8sW4tB2P')  -- 4444
+    ('io',         'Tu (Admin)',    'Italiano', 'C1',         '$2b$12$3H35nZSLzP2KdIhJqjKsAu/dEHhIFS8PGhti0kpd6pdOSreO5rx7y'), -- 0000
+    ('mamma',      'Mamma',         'Albanese', 'B1',         '$2b$12$W0ULwtx0rEHNM0mUsZHrUuEWjpcqSlnOQIKSdfZdBPgprSNst0D4G'), -- 1111
+    ('papa',       'Papà',          'Albanese', 'A2',         '$2b$12$4zsGd6Qz14tNEpXEwmvnkuqWdMTuyAVKmAYtu/rR23.mrmro8uMVC'), -- 2222
+    ('fratello1',  'Fratello 1',    'Italiano', 'Madrelingua','$2b$12$aYuNTtNhF.EFpozA9fhoXe/p3/UvKENZy3E/tQbhT1ZtBFa58DQkG'), -- 3333
+    ('fratello2',  'Fratello 2',    'Italiano', 'Madrelingua','$2b$12$07nQ0IAXtns1ofaUmvXIVeQU3u2jg3q7nTT4x9NzjL3hH54DRblua')  -- 4444
 ON CONFLICT (slug) DO NOTHING;
 
 
@@ -113,16 +113,42 @@ CREATE TABLE IF NOT EXISTS italian_progress (
 
 
 -- ==========================================================
---  6. Tokens push notifiche (Firebase/Expo)
+--  6. Tokens push notifiche (Expo Push / Firebase)
 -- ==========================================================
 CREATE TABLE IF NOT EXISTS push_tokens (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     profile_slug VARCHAR(50) NOT NULL REFERENCES profiles(slug) ON DELETE CASCADE,
     token VARCHAR(255) UNIQUE NOT NULL,
     device_info VARCHAR(255),
+    platform VARCHAR(20) DEFAULT '',
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Migrazione per installazioni già esistenti
+ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS platform VARCHAR(20) DEFAULT '';
+
+
+-- ==========================================================
+--  7. Impostazioni applicazione (automazioni, notifiche, soglie)
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value JSONB NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+
+-- ==========================================================
+--  8. Token revocati (logout reale, denylist fino a scadenza)
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS revoked_tokens (
+    token_hash TEXT PRIMARY KEY,
+    expires_at BIGINT NOT NULL,
+    revoked_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON revoked_tokens(expires_at);
 
 
 -- ==========================================================

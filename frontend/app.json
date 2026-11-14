@@ -1,25 +1,55 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
-    "version": "1.0.0",
+    "name": "ATLAS AI",
+    "slug": "atlas-ai",
+    "version": "3.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "scheme": "atlasai",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a0f"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.atlasai.family",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "ATLAS usa il microfono per dettare i messaggi in chat.",
+        "NSPhotoLibraryUsageDescription": "ATLAS usa la galleria per inviare foto alla chat AI.",
+        "NSAppTransportSecurity": { "NSAllowsLocalNetworking": true },
+        "UIBackgroundModes": ["remote-notification"]
+      }
     },
     "android": {
+      "package": "com.atlasai.family",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": ["RECORD_AUDIO", "POST_NOTIFICATIONS", "VIBRATE"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#7c3aed",
+          "defaultChannel": "atlas_default"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "ATLAS usa la galleria per inviare foto alla chat AI."
+        }
+      ]
+    ]
   }
 }

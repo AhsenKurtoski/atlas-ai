@@ -159,28 +159,67 @@ def riepilogo_budget() -> str:
 
 
 # ---------------- Azioni ----------------
-def get_stock_price(ticker: str) -> str:
-    """Prezzo di un'azione tramite Alpha Vantage (chiave opzionale NEWSAPI_KEY -> ALPHA_VANTAGE_KEY)."""
-    if not ticker or not ticker.replace(".", "").isalnum():
-        return "Ticker non valido (es. AAPL, MSFT, GOOGL)."
-    key = os.getenv("ALPHA_VANTAGE_KEY", "demo")
+def _yahoo_quote(ticker: str) -> str | None:
+    """Quotazione azionaria gratuita da Yahoo Finance (nessuna chiave)."""
     try:
         url = (
-            f"https://www.alphavantage.co/query"
-            f"?function=GLOBAL_QUOTE&symbol={quote(ticker.upper())}&apikey={quote(key)}"
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(ticker.upper())}"
+            "?interval=1d&range=5d"
         )
-        data = _safe_requests_json(url, timeout=8)
-        q = data.get("Global Quote") or {}
-        if not q:
-            return "Azione non trovata o API demo limitata. Configura ALPHA_VANTAGE_KEY nel .env."
-        price = float(q.get("05. price", 0.0) or 0.0)
-        if price <= 0:
-            return "Prezzo non disponibile per questo ticker."
-        delta = q.get("10. change percent") or "N/A"
-        return f"{ticker.upper()}: ${price:,.2f} | Δ: {delta}"
-    except requests.RequestException as exc:
-        log.warning("get_stock_price rete: %s", exc)
-        return "Impossibile raggiungere Alpha Vantage al momento."
-    except Exception as exc:
-        log.exception("get_stock_price: %s", exc)
-        return "Errore nel recupero del prezzo azionario."
+        response = requests.get(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; ATLAS-AI/3.0)"},
+            timeout=8,
+        )
+        response.raise_for_status()
+        results = ((response.json() or {}).get("chart") or {}).get("result") or []
+        if not results:
+            return None
+        meta = results[0].get("meta") or {}
+        price = meta.get("regularMarketPrice")
+        previous = meta.get("chartPreviousClose") or meta.get("previousClose")
+        currency = meta.get("currency") or "USD"
+        if price is None:
+            return None
+        delta = "n/d"
+        if previous:
+            change = (float(price) - float(previous)) / float(previous) * 100
+            delta = f"{change:+.2f}%"
+        return f"{ticker.upper()}: {float(price):,.2f} {currency} | Δ: {delta}"
+    except (requests.RequestException, ValueError, TypeError) as exc:
+        log.warning("Yahoo Finance fallito per %s: %s", ticker, exc)
+        return None
+
+
+def get_stock_price(ticker: str) -> str:
+    """Prezzo di un'azione (Alpha Vantage se configurato, altrimenti Yahoo Finance).
+
+    Args:
+        ticker: Simbolo azionario, es. AAPL, MSFT, ENI.MI.
+    """
+    if not ticker or not ticker.replace(".", "").replace("-", "").isalnum():
+        return "Ticker non valido (es. AAPL, MSFT, GOOGL)."
+
+    key = os.getenv("ALPHA_VANTAGE_KEY", "").strip()
+    if key:
+        try:
+            url = (
+                "https://www.alphavantage.co/query"
+                f"?function=GLOBAL_QUOTE&symbol={quote(ticker.upper())}&apikey={quote(key)}"
+            )
+            data = _safe_requests_json(url, timeout=8)
+            quote_data = data.get("Global Quote") or {}
+            price = float(quote_data.get("05. price", 0.0) or 0.0)
+            if price > 0:
+                delta = quote_data.get("10. change percent") or "n/d"
+                return f"{ticker.upper()}: ${price:,.2f} | Δ: {delta}"
+        except (requests.RequestException, ValueError, TypeError) as exc:
+            log.warning("Alpha Vantage fallita per %s: %s", ticker, exc)
+
+    yahoo = _yahoo_quote(ticker)
+    if yahoo:
+        return yahoo
+    return (
+        f"Quotazione di {ticker.upper()} non disponibile al momento. "
+        "Verifica il simbolo (es. AAPL, MSFT, ENI.MI) e riprova."
+    )
