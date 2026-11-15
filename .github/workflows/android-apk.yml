@@ -41,6 +41,9 @@ jobs:
       - name: Genera il progetto Android
         run: npx expo prebuild --platform android --no-install
 
+      - name: Aumenta la memoria di Gradle
+        run: echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
+
       - name: Compila APK
         working-directory: frontend/android
         run: |
