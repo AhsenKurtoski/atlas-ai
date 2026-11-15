@@ -14,7 +14,7 @@ if exist "%TAILSCALE%" (
     "%TAILSCALE%" status >nul 2>&1
     if not errorlevel 1 (
         powershell -NoProfile -Command "Start-Process -FilePath '%TAILSCALE%' -ArgumentList 'funnel','--bg','8010' -WindowStyle Hidden"
-        "%SystemRoot%\System32\timeout.exe" /t 3 /nobreak >nul
+        powershell -NoProfile -Command "Start-Sleep -Seconds 3"
         "%TAILSCALE%" funnel status 2>&1 | findstr /I "https://atlas-ai" >nul
         if not errorlevel 1 goto :done
     )
