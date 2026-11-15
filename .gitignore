@@ -95,3 +95,6 @@ eas.json.keystore
 *.key
 *.mobileprovision
 *.provisionprofile
+
+# Strumenti locali (cloudflared, chiavi tunnel, log)
+.tools/

@@ -17,9 +17,9 @@ viene considerato accettabile e come proporre una modifica.
 
 ```bash
 cd backend
-python -m venv venv
-# Windows: .\venv\Scripts\activate
-# macOS/Linux: source venv/bin/activate
+# Windows: py -3.12 -m venv venv    (NON usare Python 3.14/3.15)
+# macOS/Linux: python3 -m venv venv
+.\venv\Scripts\activate             # macOS/Linux: source venv/bin/activate
 pip install -r requirements.txt
 python -m playwright install chromium   # Chromium per i test browser
 copy .env.example .env      # opzionale: senza .env parte in modalità locale

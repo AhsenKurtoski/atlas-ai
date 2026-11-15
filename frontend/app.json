@@ -18,6 +18,7 @@
       "infoPlist": {
         "NSMicrophoneUsageDescription": "ATLAS usa il microfono per dettare i messaggi in chat.",
         "NSPhotoLibraryUsageDescription": "ATLAS usa la galleria per inviare foto alla chat AI.",
+        "NSLocalNetworkUsageDescription": "ATLAS si connette al backend sulla rete locale per chat, foto e integrazioni.",
         "NSAppTransportSecurity": { "NSAllowsLocalNetworking": true },
         "UIBackgroundModes": ["remote-notification"]
       }

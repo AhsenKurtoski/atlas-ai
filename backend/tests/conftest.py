@@ -49,6 +49,18 @@ def _isolated_db(tmp_path_factory):
 def _app():
     from main import app
 
+    # Isola la suite dai segreti reali del developer: main.py carica .env, ma i
+    # test devono sempre partire dallo stato "servizi non configurati".
+    for name in (
+        "GOOGLE_API_KEY_1", "GOOGLE_API_KEY_2", "GOOGLE_API_KEY_3",
+        "GEMINI_KEY_1", "GEMINI_KEY_2", "GEMINI_KEY_3",
+        "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI",
+        "NEWSAPI_KEY",
+    ):
+        os.environ.pop(name, None)
+    from app.ai_router import ai_router
+
+    ai_router.chiavi = []
     return app
 
 

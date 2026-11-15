@@ -19,8 +19,8 @@ FastAPI 0.115 · Python 3.11-3.13 · Pydantic v2 · APScheduler · Playwright/Ch
 ## 🏁 Installazione & avvio
 
 ```powershell
-python -m venv venv
-.\venv\Scripts\Activate.ps1      # macOS/Linux: source venv/bin/activate
+py -3.12 -m venv venv            # NON usare Python 3.14/3.15
+.\venv\Scripts\Activate.ps1      # macOS/Linux: python3 -m venv venv && source venv/bin/activate
 
 pip install -r requirements.txt
 python -m playwright install chromium   # una volta sola (Windows/macOS/Linux)
@@ -277,7 +277,7 @@ In più restano disponibili fetch web, GitHub REST e l'agente browser Chromium s
 
 1. Crea un client OAuth **Web** su <https://console.cloud.google.com/apis/credentials>
 2. Abilita **Gmail API** e **Google Calendar API**
-3. Aggiungi il redirect: `http://localhost:8000/integrazioni/google/callback`
+3. Aggiungi il redirect esatto della porta usata dal backend (es. `http://localhost:8010/integrazioni/google/callback`)
 4. Imposta `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (e `GOOGLE_REDIRECT_URI` se diverso)
 5. Finché l'app OAuth non è verificata da Google, aggiungi gli indirizzi della famiglia
    come **Test users** nella schermata OAuth consent (altrimenti Google blocca l'accesso)

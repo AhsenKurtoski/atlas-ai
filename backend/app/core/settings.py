@@ -68,7 +68,9 @@ def gemini_api_keys() -> list[str]:
 
 
 def gemini_model() -> str:
-    return env("GEMINI_MODEL", default="gemini-2.0-flash")
+    # gemini-2.0-flash è stato ritirato da Google; 3.5-flash-lite è disponibile
+    # anche sul free tier mentre i modelli 3.8 Flash sono sovraccarichi.
+    return env("GEMINI_MODEL", default="gemini-3.5-flash-lite")
 
 
 # ---------------- CORS / rete ----------------

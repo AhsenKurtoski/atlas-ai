@@ -29,7 +29,7 @@ sostituiscilo con il tuo.
 
 ```powershell
 cd "C:\Users\anelk\Desktop\Progetti Personali\atlas-ai-main\atlas-ai-main\backend"
-python -m venv venv
+py -3.12 -m venv venv            # NON usare Python 3.14/3.15: i pacchetti pinned sono per 3.11-3.13
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python -m playwright install chromium

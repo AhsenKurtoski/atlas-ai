@@ -45,9 +45,9 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 
 ```bash
 cd backend
-python -m venv venv
-# Windows: .\venv\Scripts\activate
-# macOS/Linux: source venv/bin/activate
+# Windows: py -3.12 -m venv venv    (NON usare il python 3.15 di sistema)
+# macOS/Linux: python3 -m venv venv
+.\venv\Scripts\activate             # macOS/Linux: source venv/bin/activate
 
 pip install -r requirements.txt
 python -m playwright install chromium   # Chromium per l'agente browser
@@ -106,7 +106,7 @@ eas build --profile development --platform android
 | `CORS_ALLOWED_ORIGINS` | Origini per la preview web | `*` |
 | `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` | Database remoto (alias `SUPABASE_SERVICE_ROLE_KEY`) | *(vuoto = locale)* |
 | `GOOGLE_API_KEY_1..3` | Chiavi Gemini (rotazione + fallback quota) | *(vuoto = no LLM)* |
-| `GEMINI_MODEL` | Modello Gemini | `gemini-2.0-flash` |
+| `GEMINI_MODEL` | Modello Gemini | `gemini-3.5-flash-lite` |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Gmail + Calendar (OAuth gratuito) | *(vuoto = non collegato)* |
 | `MCP_SERVERS` | Server MCP come JSON `{nome: {url}}` | *(vuoto = nessuno)* |
 | `ATLAS_CITY` | Città per briefing e ombrello smart | `Milano` |
