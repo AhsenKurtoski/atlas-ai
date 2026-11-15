@@ -92,6 +92,11 @@ class GeminiRouter:
             "5. Lista spesa: usa add_family_todo e get_family_todos.\n"
             "6. Budget: usa traccia_spesa e riepilogo_budget.\n"
             "7. Criptovalute: get_crypto_price o get_top_crypto. Meteo: get_weather.\n"
+            "7b. Gmail e Google Calendar SONO GIÀ collegati all'account della famiglia.\n"
+            "    Per leggere le email usa SEMPRE gmail_leggi_email; per l'agenda usa\n"
+            "    calendar_agenda; per cercare appuntamenti nelle email usa\n"
+            "    gmail_cerca_appuntamenti. Non dire che Gmail non è configurato senza\n"
+            "    aver prima chiamato il tool e aver visto un errore reale.\n"
             "8. Sii caloroso, familiare e conciso. Non usare emoji in eccesso.\n"
             "9. Se una funzionalità non è configurata (Gmail, Calendar, MCP), dillo chiaramente\n"
             "   e spiega come attivarla: non inventare risultati.\n"
@@ -189,6 +194,9 @@ class GeminiRouter:
                         system_instruction=system_prompt,
                         tools=ATLAS_TOOLS,
                         temperature=0.6,
+                        # Il loop qui sotto esegue i tool e registra ogni chiamata.
+                        # L'AFC automatico del SDK li eseguiva fuori dal nostro controllo.
+                        automatic_function_calling=genai.types.AutomaticFunctionCallingConfig(disable=True),
                     ),
                 )
                 if immagine:
