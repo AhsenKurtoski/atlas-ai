@@ -91,6 +91,14 @@ jobs:
           script: |
             set -uo pipefail
             adb wait-for-device
+            for attempt in $(seq 1 60); do
+              BOOTED=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+              if [ "$BOOTED" = "1" ]; then
+                echo "Emulatore avviato dopo $((attempt * 2))s"
+                break
+              fi
+              sleep 2
+            done
             adb logcat -c
             adb shell input keyevent 82 || true
             echo "APK: $(ls -lh ATLAS-AI-android.apk)"
@@ -99,7 +107,16 @@ jobs:
             adb shell getprop ro.build.version.sdk || true
             adb shell df -h /data || true
             INSTALL_STATUS=0
-            adb install -r ATLAS-AI-android.apk > /tmp/atlas-install.log 2>&1 || INSTALL_STATUS=$?
+            for attempt in 1 2 3; do
+              adb install -r ATLAS-AI-android.apk > /tmp/atlas-install.log 2>&1 && {
+                INSTALL_STATUS=0
+                break
+              }
+              INSTALL_STATUS=$?
+              echo "Tentativo installazione $attempt fallito (exit $INSTALL_STATUS)"
+              cat /tmp/atlas-install.log
+              sleep 5
+            done
             cat /tmp/atlas-install.log
             if [ "$INSTALL_STATUS" -ne 0 ]; then
               echo "::error::adb install fallito (exit $INSTALL_STATUS): $(tail -c 1200 /tmp/atlas-install.log | tr '\n' ' ')"
