@@ -89,19 +89,32 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
-            set -euo pipefail
+            set -uo pipefail
             adb wait-for-device
             adb logcat -c
-            adb install -r ATLAS-AI-android.apk
+            adb shell input keyevent 82 || true
+            adb install -r ATLAS-AI-android.apk > /tmp/atlas-install.log 2>&1 || {
+              cat /tmp/atlas-install.log
+              exit 1
+            }
+            cat /tmp/atlas-install.log
             adb shell am force-stop com.atlasai.family
-            adb shell am start -W -n com.atlasai.family/.MainActivity
-            sleep 10
+            adb shell am start -W -n com.atlasai.family/.MainActivity || true
+            sleep 15
             PID=$(adb shell pidof com.atlasai.family | tr -d '\r')
-            test -n "$PID"
+            echo "Processo ATLAS: '$PID'"
+            adb logcat -d -v brief > android-logcat.txt || true
+            if [ -z "$PID" ]; then
+              echo 'Il processo ATLAS non è attivo; logcat:'
+              tail -120 android-logcat.txt
+              exit 1
+            fi
             adb shell uiautomator dump /sdcard/atlas-window.xml || true
             adb pull /sdcard/atlas-window.xml atlas-window.xml || true
-            if [ -f atlas-window.xml ]; then
-              grep -Eq 'ATLAS AI|Chi sei' atlas-window.xml
+            if [ -s atlas-window.xml ] && ! grep -Eq 'ATLAS AI|Chi sei|Inserisci PIN' atlas-window.xml; then
+              echo 'La UI attesa non è stata trovata; logcat:'
+              tail -120 android-logcat.txt
+              exit 1
             fi
             if adb logcat -d -v brief | grep -q 'FATAL EXCEPTION'; then
               echo 'Crash Android rilevato:'
@@ -118,6 +131,7 @@ jobs:
           path: |
             atlas-install.png
             atlas-window.xml
+            android-logcat.txt
           if-no-files-found: warn
 
   publish-release:

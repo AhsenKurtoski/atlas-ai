@@ -336,6 +336,7 @@ atlas-ai/
 - **Agente browser**: architettura, tool e limiti in [`docs/BROWSER.md`](docs/BROWSER.md).
 - **Guida di test passo-passo**: [`docs/TESTING_GUIDE.md`](docs/TESTING_GUIDE.md).
 - **Installazione Android/iOS/tablet**: [`docs/INSTALL.md`](docs/INSTALL.md).
+- **Sempre online gratis**: [`docs/DEPLOY_FREE.md`](docs/DEPLOY_FREE.md) (Oracle Always Free + Tailscale Funnel).
 - **Media**: screenshot in [`screenshots/`](screenshots/) e video demo in [`media/atlas-ai-demo.mp4`](media/atlas-ai-demo.mp4).
 
 ## 💸 Costi
