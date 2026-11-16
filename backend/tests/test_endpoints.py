@@ -15,7 +15,7 @@ class TestHealth:
         assert response.status_code == 200
         body = response.json()
         assert body.get("status") == "ok"
-        assert body.get("versione") == "3.0.0"
+        assert body.get("versione") == "3.1.0"
         assert body.get("profili", 0) >= 5
         assert body.get("db_mode") in ("locale", "supabase")
         assert isinstance(body.get("llm"), bool)

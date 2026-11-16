@@ -2,6 +2,9 @@
 
 Expo SDK 51 · React Native 0.74 · TypeScript strict · NativeWind (Tailwind 3.3) · React Navigation 6 · AsyncStorage
 
+> **Installazione per utenti finali**: guida completa Android, iPhone, iPad e tablet in
+> [`../docs/INSTALL.md`](../docs/INSTALL.md).
+
 ---
 
 ## 📋 Prerequisiti
@@ -167,6 +170,11 @@ eas init                     # genera projectId (necessario per le push)
 eas build --platform android --profile preview
 eas build --platform ios --profile production
 ```
+
+> **iOS senza abbonamento**: con un Mac e un Apple ID gratuito puoi firmare l'app
+> per il tuo iPhone con `npx expo run:ios --device` (la firma scade ogni 7 giorni).
+> TestFlight e App Store richiedono Apple Developer Program. Procedura dettagliata in
+> [`../docs/INSTALL.md`](../docs/INSTALL.md).
 
 Imposta `EXPO_PUBLIC_API_URL` nel profilo EAS (`eas.json`) con l'URL HTTPS del backend.
 

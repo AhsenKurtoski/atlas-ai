@@ -129,7 +129,7 @@ export default function HomeScreen({ route, navigation }: any) {
           <Text className="text-white/60 text-xs uppercase font-bold tracking-widest">Versione Build</Text>
           <Text className="text-white text-2xl font-bold mt-2">
             {health.ok
-              ? `v${health.versione ?? '3.0.0'} · ${health.ambiente ?? 'development'}`
+              ? `v${health.versione ?? '3.1.0'} · ${health.ambiente ?? 'development'}`
               : 'Sistema offline'}
           </Text>
           <View className="flex-row mt-3 flex-wrap">

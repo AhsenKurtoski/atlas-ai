@@ -27,7 +27,6 @@ interface ChatMsg {
   role: 'user' | 'ai';
   text: string;
   ts?: number;
-  latencyMs?: number;
   imageUri?: string;
 }
 
@@ -50,19 +49,18 @@ function detectImageMime(base64: string): string {
 
 const WELCOME: ChatMsg = {
   role: 'ai',
-  text: `Ciao! Sono **ATLAS AI**. Sono il tuo assistente personale.
-
-Chiedimi tutto! Posso:
-- 💰 **Crypto**: Prezzi Bitcoin/Ethereum in tempo reale
-- 🌤️ **Meteo**: Che tempo fa in qualsiasi città
-- 🛒 **Lista spesa**: Aggiungere e leggere la spesa
-- 📧 **Email**: Leggere la posta (se Gmail è collegata)
-- 📅 **Calendar**: Gestire appuntamenti (se Calendar è collegato)
-- 🌐 **Browser**: Apre siti reali, clicca, compila moduli e cerca sul web
-- 💡 **Consigli**: Barzellette, suggerimenti
-
-Prova a dirmi 📱: *"Quant'è il Bitcoin oggi?"*`,
+  text: `Ciao! Sono **ATLAS AI**. Chiedimi meteo, email, calendario, budget o italiano.`,
 };
+
+/** Expo Haptics non esiste sul web: un errore qui non deve bloccare l'invio. */
+function fireHaptic(call: () => Promise<unknown>) {
+  if (Platform.OS === 'web') return;
+  try {
+    void call().catch(() => undefined);
+  } catch {
+    // Alcuni dispositivi non supportano l'haptic feedback.
+  }
+}
 
 export default function ChatScreen({ route }: any) {
   const { profileId: authProfileId, authToken } = useAuth();
@@ -136,7 +134,7 @@ export default function ChatScreen({ route }: any) {
       const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
       recordingRef.current = recording;
       setIsRecording(true);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      fireHaptic(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium));
     } catch (error: any) {
       Alert.alert('Registrazione non disponibile', error?.message ?? 'Riprova tra un istante.');
     }
@@ -147,7 +145,7 @@ export default function ChatScreen({ route }: any) {
     if (!recording) return;
     recordingRef.current = null;
     setIsRecording(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    fireHaptic(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success));
 
     try {
       await recording.stopAndUnloadAsync();
@@ -208,7 +206,7 @@ export default function ChatScreen({ route }: any) {
         base64: asset.base64,
         mimeType: detectImageMime(asset.base64),
       });
-      Haptics.selectionAsync();
+      fireHaptic(() => Haptics.selectionAsync());
     } catch (error: any) {
       Alert.alert('Galleria non disponibile', error?.message ?? 'Riprova tra un istante.');
     }
@@ -218,7 +216,7 @@ export default function ChatScreen({ route }: any) {
     const text = inputText.trim();
     const caption = text || (pendingImage ? 'Cosa vedi in questa foto?' : '');
     if ((!caption && !pendingImage) || isLoading) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    fireHaptic(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light));
     setMessages((previous) => [
       ...previous,
       { role: 'user', text: caption, ts: Date.now(), imageUri: pendingImage?.uri },
@@ -239,10 +237,9 @@ export default function ChatScreen({ route }: any) {
           role: 'ai',
           text: reply,
           ts: Date.now(),
-          latencyMs: typeof data.latency_ms === 'number' ? data.latency_ms : undefined,
         },
       ]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      fireHaptic(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success));
     } catch (error: any) {
       let message = error?.message || 'Errore di connessione.';
       if (error instanceof ApiError && error.status === 401) {
@@ -317,9 +314,6 @@ export default function ChatScreen({ route }: any) {
                 />
               ) : null}
               <Markdown style={markdownStyles}>{message.text}</Markdown>
-              {message.latencyMs ? (
-                <Text className="text-white/50 text-[10px] mt-2">{message.latencyMs.toFixed(0)} ms</Text>
-              ) : null}
             </Animated.View>
           ))}
 

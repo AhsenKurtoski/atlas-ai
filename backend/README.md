@@ -37,7 +37,7 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
   "profili": 5,
   "automazioni": 11,
   "ambiente": "development",
-  "versione": "3.0.0",
+  "versione": "3.1.0",
   "db_mode": "locale",
   "notifiche": "expo",
   "llm": false

@@ -1,4 +1,4 @@
-# 🧠 ATLAS AI v3.0
+# 🧠 ATLAS AI v3.1
 
 Assistente AI **family-first** con backend Python/FastAPI + app mobile React Native (Expo).
 
@@ -8,6 +8,44 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 > che apre siti, clicca, compila moduli e legge pagine dinamiche.
 
 **Licenza MIT** · CI su GitHub Actions · 146 test backend · TypeScript strict a 0 errori
+
+<p align="center">
+  <a href="media/atlas-ai-demo.mp4"><img src="media/atlas-ai-poster.jpg" width="250" alt="Guarda il video demo di ATLAS AI"></a>
+  <a href="screenshots/01-home.png"><img src="screenshots/01-home.png" width="250" alt="Home di ATLAS AI"></a>
+  <a href="screenshots/02-chat.png"><img src="screenshots/02-chat.png" width="250" alt="Chat AI di ATLAS AI"></a>
+</p>
+
+<p align="center"><a href="media/atlas-ai-demo.mp4"><strong>▶ Guarda il video demo (18 secondi)</strong></a> · <a href="docs/INSTALL.md"><strong>📲 Installa su Android, iPhone o tablet</strong></a></p>
+
+---
+
+## 📲 Installazione rapida
+
+| Dispositivo | Come |
+|---|---|
+| **Android (telefono/tablet)** | Scarica l'[APK installabile](https://github.com/AhsenKurtoski/atlas-ai/releases/latest), apri il file e consenti l'installazione da browser. |
+| **iPhone / iPad** | TestFlight/App Store (Apple Developer) oppure firma gratuita con Mac + Apple ID. |
+| **Tablet** | Stessa app: layout responsive a due colonne, nessuna build separata. |
+| **Sviluppo** | Backend + `npx expo start`; dettagli sotto. |
+
+La guida passo-passo, i limiti della firma iOS e la risoluzione dei problemi sono in
+**[docs/INSTALL.md](docs/INSTALL.md)**.
+
+---
+
+## 📸 Screenshot
+
+| Home | Chat AI | Italiano |
+|---|---|---|
+| <img src="screenshots/01-home.png" width="210"> | <img src="screenshots/02-chat.png" width="210"> | <img src="screenshots/03-italiano.png" width="210"> |
+
+| Budget | Impostazioni | Tablet |
+|---|---|---|
+| <img src="screenshots/04-budget.png" width="210"> | <img src="screenshots/05-settings.png" width="210"> | <img src="screenshots/07-tablet-login.png" width="300"> |
+
+Screenshot reali dell'app (build web con lo stesso codice React Native). Il video
+9:16 è in **[media/atlas-ai-demo.mp4](media/atlas-ai-demo.mp4)** con poster
+**[media/atlas-ai-poster.jpg](media/atlas-ai-poster.jpg)**.
 
 ---
 
@@ -265,6 +303,8 @@ atlas-ai/
 - **Nessun segreto nel repo**: `.env` e `_local_db/` sono ignorati; usa `.env.example` come modello.
 - **Agente browser**: architettura, tool e limiti in [`docs/BROWSER.md`](docs/BROWSER.md).
 - **Guida di test passo-passo**: [`docs/TESTING_GUIDE.md`](docs/TESTING_GUIDE.md).
+- **Installazione Android/iOS/tablet**: [`docs/INSTALL.md`](docs/INSTALL.md).
+- **Media**: screenshot in [`screenshots/`](screenshots/) e video demo in [`media/atlas-ai-demo.mp4`](media/atlas-ai-demo.mp4).
 
 ## 💸 Costi
 

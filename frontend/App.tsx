@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
+import { NativeWindStyleSheet } from 'nativewind';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -19,6 +20,10 @@ import {
   unregisterPushToken,
   cancelLocalReminders,
 } from './src/services/notifications';
+
+// Expo web non carica il foglio CSS generato da NativeWind: usa gli stili
+// nativi inline anche nel browser, così la resa resta identica alle app mobile.
+NativeWindStyleSheet.setOutput({ default: 'native' });
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();

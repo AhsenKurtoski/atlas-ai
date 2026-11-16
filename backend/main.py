@@ -1,5 +1,5 @@
 """
-ATLAS AI v3.0 — Entrypoint principale FastAPI.
+ATLAS AI v3.1 — Entrypoint principale FastAPI.
 
 Sicurezza & architettura:
 - Token di sessione firmati HMAC (stateless → sicuri anche con più worker)
@@ -109,7 +109,7 @@ limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
 # ---------------- Lifespan ----------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("🚀 Avvio ATLAS AI v3.0 - ambiente=%s", os.getenv("APP_ENV", "development"))
+    log.info("🚀 Avvio ATLAS AI v3.1 - ambiente=%s", os.getenv("APP_ENV", "development"))
     if scheduler_enabled():
         try:
             start_scheduler()
@@ -152,9 +152,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="ATLAS AI v3.0 Backend",
+    title="ATLAS AI v3.1 Backend",
     description="Assistente AI per la famiglia con LLM, tool reali e notifiche push",
-    version="3.0.0",
+    version="3.1.0",
     lifespan=lifespan,
 )
 app.state.limiter = limiter

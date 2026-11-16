@@ -8,6 +8,12 @@ import { useAuth } from '../../App';
 
 const CATEGORIES = ['🍕 Cibo', '🚗 Trasporti', '⚡ Bollette', '💊 Salute', '📚 Istruzione', '🎮 Svago', 'Altro'];
 
+const formatEuro = (value: number) => value.toFixed(2).replace('.', ',');
+const normalizeCategory = (value: string) => {
+  const clean = (value || 'Altro').trim();
+  return clean ? clean.charAt(0).toUpperCase() + clean.slice(1) : 'Altro';
+};
+
 export default function BudgetScreen({ route }: any) {
   const { profileId: authProfileId } = useAuth();
   const profileId: string = route?.params?.profileId ?? authProfileId ?? 'io';
@@ -42,7 +48,8 @@ export default function BudgetScreen({ route }: any) {
   );
 
   const totali = budget.dettaglio.reduce<Record<string, number>>((acc, row) => {
-    acc[row.categoria] = (acc[row.categoria] || 0) + row.importo;
+    const category = normalizeCategory(row.categoria);
+    acc[category] = (acc[category] || 0) + row.importo;
     return acc;
   }, {});
 
@@ -69,7 +76,7 @@ export default function BudgetScreen({ route }: any) {
       setCategoria('');
       setDescrizione('');
       await loadBudget();
-      Alert.alert('Fatto', `Spesa €${parsed.toFixed(2)} in "${categoria}" registrata.`);
+      Alert.alert('Fatto', `Spesa €${formatEuro(parsed)} in "${categoria}" registrata.`);
     } catch (error: any) {
       Alert.alert(
         'Errore',
@@ -85,7 +92,7 @@ export default function BudgetScreen({ route }: any) {
       <StatusBar style="light" />
       <ScrollView className="flex-1 p-5">
         <Text className="text-3xl font-black text-white mb-2">💰 Budget Famiglia</Text>
-        <Text className="text-[#22c55e] text-4xl font-black mb-6">€{totale.toFixed(2)}</Text>
+        <Text className="text-[#22c55e] text-4xl font-black mb-6">€{formatEuro(totale)}</Text>
         {loading ? <Text className="text-[#8888a0] mb-6">Aggiornamento dati dal backend...</Text> : null}
 
         <View className="bg-[#ffffff08] p-5 rounded-[28px] mb-6">
@@ -97,7 +104,7 @@ export default function BudgetScreen({ route }: any) {
                 <View className="flex-row justify-between mb-1">
                   <Text className="text-white font-semibold">{category}</Text>
                   <Text className="text-[#8888a0]">
-                    €{amount.toFixed(2)} · {percentage.toFixed(0)}%
+                    €{formatEuro(amount)} · {percentage.toFixed(0)}%
                   </Text>
                 </View>
                 <View className="bg-[#ffffff10] h-3 rounded-full overflow-hidden">

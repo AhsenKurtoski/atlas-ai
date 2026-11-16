@@ -73,7 +73,7 @@ class GeminiRouter:
                 + "\n".join(righe)
             )
         return (
-            "Sei ATLAS AI v3.0, l'assistente personale e fidato di una famiglia italiana.\n"
+            "Sei ATLAS AI v3.1, l'assistente personale e fidato di una famiglia italiana.\n"
             f"Stai parlando con: **{nome}**\n"
             f"Lingua madre di {nome}: {madre}\n"
             f"Livello di italiano attuale: {livello}\n"
