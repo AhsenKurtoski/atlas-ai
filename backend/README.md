@@ -35,9 +35,9 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 {
   "status": "ok",
   "profili": 5,
-  "automazioni": 11,
+  "automazioni": 12,
   "ambiente": "development",
-  "versione": "3.1.0",
+  "versione": "3.2.0",
   "db_mode": "locale",
   "notifiche": "expo",
   "llm": false
@@ -49,7 +49,7 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ---
 
-## 🧪 Test (146)
+## 🧪 Test (163)
 
 ```bash
 pytest -q                     # tutti
@@ -57,7 +57,7 @@ pytest tests/test_endpoints.py -v
 pytest --cov=app --cov-report=html
 ```
 
-Stato attuale: **146 passed / 0 failed** (18 test con Chromium reale + 2 del loop Gemini con client finto).
+Stato attuale: **163 passed / 0 failed** (18 test con Chromium reale + 2 del loop Gemini con client finto).
 
 | Suite | Copre |
 |---|---|
@@ -171,6 +171,10 @@ Pubblici: `/`, `/profili` (GET), `/auth/pin`.
 | GET | `/todos?filtro=pending` | ✅ | Lista todo |
 | POST | `/todos` | ✅ | Aggiungi todo |
 | POST | `/todos/{numero}/completa` | ✅ | Completa il task n (1-based) |
+| DELETE | `/todos/{numero}` | ✅ | Elimina il task n (1-based) |
+| GET | `/promemoria` | ✅ | Promemoria futuri + lista allegata |
+| DELETE | `/promemoria/{id}` | ✅ | Annulla un promemoria |
+| POST | `/promemoria/{id}/programmato` | ✅ | Conferma la notifica locale pianificata |
 | GET | `/budget` | ✅ | Totale + dettaglio per categoria |
 | POST | `/budget/spesa` | ✅ | Registra spesa |
 | POST | `/notifiche/registra` | ✅ | Registra token push del dispositivo |
@@ -220,7 +224,7 @@ Esegui `supabase_schema.sql` nell'SQL editor di Supabase per crearle.
 
 ---
 
-## ⏰ Automazioni (11)
+## ⏰ Automazioni (12)
 
 La città usata da briefing e ombrello smart si imposta con `ATLAS_CITY` (default `Milano`).
 

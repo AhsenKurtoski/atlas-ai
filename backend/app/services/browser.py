@@ -134,6 +134,18 @@ def _attr(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def _settle(page: Any, timeout: int = 1500) -> None:
+    """Attende la fine delle richieste asincrone senza bloccare le SPA lente."""
+    try:
+        page.wait_for_load_state("networkidle", timeout=timeout)
+    except Exception:
+        pass
+    try:
+        page.wait_for_timeout(250)
+    except Exception:
+        pass
+
+
 class _BrowserWorker(threading.Thread):
     def __init__(self) -> None:
         super().__init__(name="atlas-browser", daemon=True)
@@ -273,13 +285,18 @@ class _BrowserWorker(threading.Thread):
         validate_url(url)
         session = self._session(profile)
         page = session.page
+        response = None
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=self._nav_timeout)
+            response = page.goto(url, wait_until="domcontentloaded", timeout=self._nav_timeout)
         except Exception as exc:
-            if page.url in {"", "about:blank"}:
-                raise BrowserError(f"Impossibile aprire {url}: {str(exc)[:250]}") from exc
-        page.wait_for_timeout(800)
+            # Non restituire la pagina precedente come se fosse quella richiesta:
+            # un errore di rete o un host irraggiungibile deve essere esplicito.
+            raise BrowserError(f"Impossibile aprire {url}: {str(exc)[:250]}") from exc
+        _settle(page, timeout=2500)
         validate_url(page.url)
+        status = getattr(response, "status", None)
+        if status and int(status) >= 400:
+            return self._snapshot(page, prefix=f"⚠️ Aperto con HTTP {status}: {page.url}")
         return self._snapshot(page, prefix=f"🌐 Aperto: {page.url}")
 
     def view(self, profile: str) -> str:
@@ -309,6 +326,7 @@ class _BrowserWorker(threading.Thread):
                 page.wait_for_load_state("domcontentloaded", timeout=3000)
             except Exception:
                 pass
+        _settle(session.page, timeout=1800)
         validate_url(session.page.url)
         return self._snapshot(
             session.page, prefix=f"✅ Cliccato «{target}». Pagina attuale: {session.page.url}"
@@ -320,7 +338,7 @@ class _BrowserWorker(threading.Thread):
         locator.fill(text, timeout=self._action_timeout)
         if submit:
             locator.press("Enter", timeout=self._action_timeout)
-            page.wait_for_timeout(900)
+            _settle(page, timeout=1800)
             try:
                 page.wait_for_load_state("domcontentloaded", timeout=4000)
             except Exception:
@@ -345,6 +363,51 @@ class _BrowserWorker(threading.Thread):
         page.wait_for_timeout(400)
         return self._snapshot(page, prefix=f"✅ Selezionato «{value}» in «{field}».")
 
+    def press(self, profile: str, key: str) -> str:
+        page = self._active_page(profile)
+        aliases = {
+            "invio": "Enter",
+            "enter": "Enter",
+            "esc": "Escape",
+            "escape": "Escape",
+            "tab": "Tab",
+            "spazio": "Space",
+            "space": "Space",
+            "su": "ArrowUp",
+            "giu": "ArrowDown",
+        }
+        normalized = (key or "").strip()
+        page.keyboard.press(aliases.get(normalized.lower(), normalized or "Enter"))
+        _settle(page, timeout=1200)
+        return self._snapshot(page, prefix=f"⌨️ Premuto «{key}». Pagina attuale: {page.url}")
+
+    def check(self, profile: str, target: str, checked: bool = True) -> str:
+        page = self._active_page(profile)
+        locator = self._resolve_field(page, target)
+        fallback_used = False
+        try:
+            if checked:
+                locator.check(timeout=self._action_timeout)
+            else:
+                locator.uncheck(timeout=self._action_timeout)
+        except Exception:
+            # Alcuni controlli custom non sono input nativi: un click reale è il fallback.
+            locator.click(timeout=self._action_timeout)
+            fallback_used = True
+        page.wait_for_timeout(400)
+        try:
+            actual = bool(locator.is_checked(timeout=1000))
+        except Exception:
+            actual = None
+        if actual is None:
+            stato = f"cliccato (stato non verificabile; richiesto {'selezionato' if checked else 'deselezionato'})"
+        else:
+            stato = "selezionato" if actual else "deselezionato"
+            if actual != checked:
+                stato += " (il sito ha rifiutato il cambio)"
+        nota = " Fallback click usato." if fallback_used else ""
+        return self._snapshot(page, prefix=f"✅ «{target}» {stato}.{nota}")
+
     def scroll(self, profile: str, direction: str) -> str:
         page = self._active_page(profile)
         down = direction.strip().lower() not in {"su", "up", "sopra", "indietro"}
@@ -354,11 +417,12 @@ class _BrowserWorker(threading.Thread):
 
     def back(self, profile: str) -> str:
         page = self._active_page(profile)
+        before = page.url
         try:
             response = page.go_back(wait_until="domcontentloaded", timeout=self._nav_timeout)
         except Exception:
             response = None
-        if response is None:
+        if response is None and page.url == before:
             return "ℹ️ Nessuna pagina precedente nella cronologia del browser."
         page.wait_for_timeout(500)
         validate_url(page.url)
@@ -405,8 +469,11 @@ class _BrowserWorker(threading.Thread):
             )
         for locator in candidates:
             try:
-                if locator.count() > 0:
-                    return locator.first
+                count = locator.count()
+                for index in range(min(count, 12)):
+                    candidate = locator.nth(index)
+                    if candidate.is_visible():
+                        return candidate
             except Exception:
                 continue
         raise BrowserError(
@@ -420,6 +487,7 @@ class _BrowserWorker(threading.Thread):
         candidates = [
             page.get_by_label(target, exact=False),
             page.get_by_placeholder(target, exact=False),
+            page.get_by_role("textbox", name=target, exact=False),
         ]
         if self._looks_like_css(target):
             candidates.append(page.locator(target))
@@ -429,12 +497,19 @@ class _BrowserWorker(threading.Thread):
                 page.locator(f'input[name="{escaped}"]'),
                 page.locator(f'textarea[name="{escaped}"]'),
                 page.locator(f'[placeholder="{escaped}"]'),
+                # Editor moderni (chat, CMS): solo se il target corrisponde
+                # all'etichetta, mai un contenteditable arbitrario.
+                page.locator(f'[contenteditable="true"][aria-label*="{escaped}"]'),
+                page.locator(f'[contenteditable="true"][data-placeholder*="{escaped}"]'),
             ]
         )
         for locator in candidates:
             try:
-                if locator.count() > 0:
-                    return locator.first
+                count = locator.count()
+                for index in range(min(count, 12)):
+                    candidate = locator.nth(index)
+                    if candidate.is_visible():
+                        return candidate
             except Exception:
                 continue
         raise BrowserError(
@@ -597,6 +672,12 @@ class BrowserService:
 
     def select(self, profile: str, field: str, value: str) -> str:
         return self._call(lambda: self._operation("select", profile, field, value))
+
+    def press(self, profile: str, key: str) -> str:
+        return self._call(lambda: self._operation("press", profile, key))
+
+    def check(self, profile: str, target: str, checked: bool = True) -> str:
+        return self._call(lambda: self._operation("check", profile, target, checked))
 
     def scroll(self, profile: str, direction: str) -> str:
         return self._call(lambda: self._operation("scroll", profile, direction))

@@ -101,6 +101,27 @@ def browser_seleziona(campo: str, valore: str) -> str:
     return _run(lambda: browser_service.select(_profile(), campo, valore))
 
 
+def browser_premi(tasto: str = "Invio") -> str:
+    """Preme un tasto reale nella pagina (Invio, Esc, Tab, frecce, spazio).
+
+    Utile per chiudere un banner, confermare una ricerca o spostarsi tra i campi.
+
+    Args:
+        tasto: Nome del tasto, es. "Invio", "Esc", "Tab", "ArrowDown".
+    """
+    return _run(lambda: browser_service.press(_profile(), tasto))
+
+
+def browser_spunta(elemento: str, selezionato: bool = True) -> str:
+    """Seleziona o deseleziona una checkbox/radio nella pagina aperta.
+
+    Args:
+        elemento: Selettore CSS, label, nome o placeholder del controllo.
+        selezionato: True per spuntare, False per togliere la spunta.
+    """
+    return _run(lambda: browser_service.check(_profile(), elemento, bool(selezionato)))
+
+
 def browser_scorri(direzione: str = "giu") -> str:
     """Scorre la pagina aperta per caricare altro contenuto.
 
@@ -126,6 +147,8 @@ BROWSER_TOOLS = [
     browser_clicca,
     browser_scrivi,
     browser_seleziona,
+    browser_premi,
+    browser_spunta,
     browser_scorri,
     browser_indietro,
     browser_chiudi,
@@ -138,6 +161,8 @@ __all__ = [
     "browser_clicca",
     "browser_scrivi",
     "browser_seleziona",
+    "browser_premi",
+    "browser_spunta",
     "browser_scorri",
     "browser_indietro",
     "browser_chiudi",

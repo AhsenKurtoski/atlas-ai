@@ -22,8 +22,10 @@ from app.core.database import (
     fetch_profiles,
     get_budget_summary,
     get_italian_leaderboard,
+    get_due_reminders,
     get_settings,
     get_todos,
+    mark_reminder_sent,
 )
 from app.core.logging_config import get_logger
 from app.core.scheduler_lock import ProcessLock
@@ -55,6 +57,7 @@ JOB_KEYS: tuple[str, ...] = (
     "promemoria_pillola",
     "smart_calendar",
     "crypto_tracker",
+    "promemoria_due",
 )
 
 
@@ -269,6 +272,54 @@ def job_crypto_tracker() -> None:
     log.info("📈 Crypto orario: %s", str(btc)[:120])
 
 
+def job_promemoria_due() -> None:
+    """Invia i promemoria scaduti non ancora pianificati localmente.
+
+    L'app pianifica una notifica locale appena crea/sincronizza un promemoria
+    e lo conferma con /promemoria/{id}/programmato. Se quella conferma manca
+    (app chiusa, permesso negato, altro dispositivo), lo scheduler usa il push
+    reale come fallback. In questo modo non arrivano due notifiche uguali.
+    """
+    if not _enabled("promemoria_due"):
+        return
+    now = datetime.datetime.now(datetime.timezone.utc)
+    now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    due = _safe("lettura promemoria scaduti", lambda: get_due_reminders(now_iso, limit=30)) or []
+    for reminder in due:
+        try:
+            reminder_id = str(reminder.get("id") or "")
+            profile = str(reminder.get("profile_slug") or "")
+            if not reminder_id or not profile:
+                continue
+            if reminder.get("local_scheduled_at"):
+                # La notifica locale è già pianificata sul dispositivo: niente push duplicata.
+                mark_reminder_sent(reminder_id)
+                continue
+            messaggio = str(reminder.get("message") or "Promemoria")
+            if bool(reminder.get("include_todos", True)):
+                pending = [
+                    str(todo.get("task_text") or todo.get("task") or "").strip()
+                    for todo in (get_todos(only_pending=True) or [])
+                    if (todo.get("task_text") or todo.get("task"))
+                ]
+                if pending:
+                    anteprima = ", ".join(pending[:12])
+                    messaggio += f"\n🛒 Lista ({len(pending)}): {anteprima}" + ("…" if len(pending) > 12 else "")
+            inviati = invia_a_profilo(
+                profile,
+                "⏰ Promemoria ATLAS",
+                messaggio[:800],
+                {"tipo": "promemoria", "reminder_id": reminder_id},
+            )
+            if inviati > 0:
+                mark_reminder_sent(reminder_id)
+                log.info("Promemoria %s inviato a %s", reminder_id[:12], profile)
+            else:
+                log.info("Promemoria %s in attesa: nessun dispositivo push per %s", reminder_id[:12], profile)
+        except Exception as exc:  # pragma: no cover - dipende dal DB/rete
+            log.error("Errore promemoria %s: %s", str(reminder.get("id"))[:12], exc)
+
+
 # ======================================================================
 #  REGISTRAZIONE JOB
 # ======================================================================
@@ -325,6 +376,10 @@ def _register_jobs(scheduler: BackgroundScheduler) -> None:
     _add_job_once(
         scheduler, "crypto_tracker", job_crypto_tracker,
         IntervalTrigger(hours=1),
+    )
+    _add_job_once(
+        scheduler, "promemoria_due", job_promemoria_due,
+        IntervalTrigger(seconds=30),
     )
     _log(f"✅ Registrate {len(_JOB_IDS)} automazioni")
 

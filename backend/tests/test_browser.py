@@ -23,8 +23,10 @@ from app.tools.browser import (
     browser_chiudi,
     browser_clicca,
     browser_indietro,
+    browser_premi,
     browser_scorri,
     browser_seleziona,
+    browser_spunta,
     browser_scrivi,
     browser_vedi,
 )
@@ -49,6 +51,8 @@ PAGINA = """<!doctype html>
   </form>
   <div id="esito"></div>
   <button id="carica" onclick="setTimeout(function(){document.getElementById('esito').textContent='Caricato dopo';}, 200)">Carica</button>
+  <label for="promo">Voglio le offerte</label>
+  <input id="promo" name="promo" type="checkbox">
   <div style="height:1800px">Spazio per lo scroll</div>
 </body>
 </html>
@@ -151,6 +155,8 @@ class TestRegistry:
             "browser_clicca",
             "browser_scrivi",
             "browser_seleziona",
+            "browser_premi",
+            "browser_spunta",
             "browser_scorri",
             "browser_indietro",
             "browser_chiudi",
@@ -182,6 +188,13 @@ class TestBrowserReale:
         assert "Selezionato" in output
         scroll = browser_scorri("giu")
         assert "Scorrimento" in scroll
+
+    def test_spunta_e_premi(self, site_url):
+        browser_apri(site_url)
+        checked = browser_spunta("Voglio le offerte")
+        assert "selezionato" in checked.lower()
+        pressed = browser_premi("Esc")
+        assert "Premuto" in pressed
 
     def test_javascript_aggiorna_pagina(self, site_url):
         browser_apri(site_url)

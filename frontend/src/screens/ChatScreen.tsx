@@ -21,6 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import Markdown from 'react-native-markdown-display';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiService, { ApiError } from '../services/api';
+import { syncUpcomingReminders } from '../services/notifications';
 import { useAuth } from '../../App';
 
 interface ChatMsg {
@@ -239,6 +240,18 @@ export default function ChatScreen({ route }: any) {
           ts: Date.now(),
         },
       ]);
+      const reminderCreated = /promemoria impostato|promemoria creato/i.test(reply);
+      const sync = await syncUpcomingReminders();
+      if (reminderCreated && (!sync.ok || sync.scheduled === 0)) {
+        setMessages((previous) => [
+          ...previous,
+          {
+            role: 'ai',
+            text: `⚠️ **Promemoria salvato, ma notifica non attiva:** ${sync.message}`,
+            ts: Date.now(),
+          },
+        ]);
+      }
       fireHaptic(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success));
     } catch (error: any) {
       let message = error?.message || 'Errore di connessione.';

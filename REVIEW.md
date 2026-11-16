@@ -19,7 +19,7 @@ funzionalità dichiarate nei README ma inesistenti. Dopo gli interventi:
 | Endpoint privati | ❌ todos/budget/chat aperti | ✅ Bearer obbligatorio + 401 |
 | Notifiche | ❌ solo log "mock", nessun invio | ✅ Expo Push reale + promemoria locali |
 | MCP | ❌ 7 placeholder che dicevano "non disponibile" | ✅ client MCP JSON-RPC reale |
-| Browser / agente web | ❌ solo fetch HTTP, nessuna interazione | ✅ Chromium headless reale, 8 tool, sessioni per profilo |
+| Browser / agente web | ❌ solo fetch HTTP, nessuna interazione | ✅ Chromium headless reale, 10 tool, sessioni per profilo |
 | Gmail/Calendar | ❌ risposte finte di successo | ✅ OAuth reale o messaggio "non configurato" |
 | Voli | ❌ risultati simulati | ✅ Amadeus o link di ricerca reali |
 | Traduzioni | ❌ restituiva un prompt | ✅ MyMemory reale |
@@ -29,7 +29,7 @@ funzionalità dichiarate nei README ma inesistenti. Dopo gli interventi:
 | Profili | ❌ "Aggiungi profilo" non faceva nulla | ✅ creazione/eliminazione reali con PIN |
 | Italiano | ❌ schermata statica, punteggi finti | ✅ lezioni, quiz, punti e streak reali |
 | Sessione app | ❌ riavvio → nessun ripristino | ✅ ripristino validato + logout |
-| Test backend | 54 dichiarati (con `verify_pin` patchato) | 146 reali (18 Chromium + 2 loop Gemini), nessun patch dell'auth |
+| Test backend | 54 dichiarati (con `verify_pin` patchato) | 163 reali (18 Chromium + 2 loop Gemini), nessun patch dell'auth |
 | Typecheck frontend | dichiarato 0 | ✅ verificato 0 |
 | Multi-utente | ruoli assenti, logout non revocava | ✅ isolamento per profilo, admin-only, revoca reale |
 | Open source | nessuna LICENSE radice, CI assente | ✅ MIT, SECURITY, CONTRIBUTING, CI |
@@ -154,8 +154,8 @@ funzionalità dichiarate nei README ma inesistenti. Dopo gli interventi:
 | Foto dalla galleria → Gemini vision | test endpoint (PNG valido, MIME/base64 errati) + bundle iOS/Android | ✅ codice reale; vision da provare con chiave Gemini |
 | Agente browser | 18 test con Chromium su server locale (click, form, select, scroll, back, DNS su XHR/iframe/immagini, SSRF, sessioni) | ✅ reale |
 | Loop Gemini | 2 test con client finto (tool multipli, function-response, limite turni) | ✅ reale |
-| Health `/` | uvicorn reale + curl | ✅ 200, 5 profili, 11 automazioni, db_mode |
-| Login PIN | curl `0000`, `1111` + 146 test | ✅ token valido, PIN errato rifiutato |
+| Health `/` | uvicorn reale + curl | ✅ 200, 5 profili, 12 automazioni, db_mode |
+| Login PIN | curl `0000`, `1111` + 163 test | ✅ token valido, PIN errato rifiutato |
 | Protezione endpoint | curl senza token | ✅ 401 |
 | Todos CRUD | curl + test | ✅ aggiunta, lista, completamento |
 | Budget | curl + test | ✅ totale e percentuali |
@@ -168,7 +168,7 @@ funzionalità dichiarate nei README ma inesistenti. Dopo gli interventi:
 | Impostazioni | curl + test | ✅ merge parziale persistito |
 | Italiano | curl + test | ✅ lezione, quiz senza soluzioni, valutazione, progressi |
 | Profili | test crea/login/elimina | ✅ + protezione admin |
-| Automazioni | curl | ✅ 11 job con prossima esecuzione |
+| Automazioni | curl | ✅ 12 job con prossima esecuzione |
 | Typecheck frontend | `tsc --noEmit` | ✅ 0 errori |
 | Bundle Android/iOS | `expo export` | ✅ Android OK · ✅ iOS OK |
 
@@ -238,7 +238,7 @@ Priorità bassa:
 
 ```text
 backend:  python -m venv venv (Python 3.12) + pip install -r requirements.txt   → OK
-backend:  python -m pytest -q                                                  → 146 passed
+backend:  python -m pytest -q                                                  → 163 passed
 backend:  pytest tests/test_browser.py -v                                      → 18 passed (Chromium reale)
 backend:  pytest tests/test_ai_loop.py -v                                      → 2 passed (client Gemini finto)
 backend:  python -m playwright install chromium                                → OK (Chromium 159)

@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import uuid
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from typing import Any, Callable, Iterable, Optional, TypeVar
@@ -254,6 +255,226 @@ def _fb_complete_todo_by_index(index: int, mark: bool = True) -> bool:
     rows[int(index) - 1]["completed_at"] = _now_iso() if mark else None
     _fallback_write("family_todos", rows)
     return True
+
+
+@resilient(fallback_return=False)
+def delete_todo_by_index(index: int) -> bool:
+    """Elimina definitivamente l'n-esimo task (1-based, stesso ordine della UI)."""
+    todos = get_todos()
+    if not (1 <= int(index) <= len(todos)):
+        return False
+    item = todos[int(index) - 1]
+    row_id = item.get("id")
+    client = get_client()
+    if client and row_id:
+        client.table("family_todos").delete().eq("id", row_id).execute()
+        return True
+    return _fb_delete_todo_by_index(index)
+
+
+def _fb_delete_todo_by_index(index: int) -> bool:
+    rows = _fallback_read("family_todos", [])
+    if not (1 <= int(index) <= len(rows)):
+        return False
+    rows.pop(int(index) - 1)
+    _fallback_write("family_todos", rows)
+    return True
+
+
+# ====================================================================
+#  PROMEMORIA PERSONALI (APScheduler + notifiche locali/push)
+# ====================================================================
+def _reminder_row(profile_slug: str, message: str, remind_at: str, include_todos: bool, source: str) -> dict:
+    return {
+        "id": uuid.uuid4().hex,
+        "profile_slug": profile_slug,
+        "message": message,
+        "remind_at": remind_at,
+        "include_todos": bool(include_todos),
+        "status": "pending",
+        "source": source or "chat",
+        "local_scheduled_at": None,
+        "sent_at": None,
+        "created_at": _now_iso(),
+    }
+
+
+@resilient(fallback_return=None)
+def add_reminder(
+    profile_slug: str,
+    message: str,
+    remind_at: str,
+    include_todos: bool = True,
+    source: str = "chat",
+) -> dict | None:
+    """Salva un promemoria. `remind_at` è un ISO 8601 UTC fornito dal parser."""
+    client = get_client()
+    if client is None:
+        return _fb_add_reminder(profile_slug, message, remind_at, include_todos, source)
+    response = (
+        client.table("family_reminders")
+        .insert(
+            {
+                "profile_slug": profile_slug,
+                "message": message,
+                "remind_at": remind_at,
+                "include_todos": bool(include_todos),
+                "status": "pending",
+                "source": source or "chat",
+            }
+        )
+        .execute()
+    )
+    rows = list(response.data or [])
+    return rows[0] if rows else None
+
+
+def _fb_add_reminder(
+    profile_slug: str,
+    message: str,
+    remind_at: str,
+    include_todos: bool = True,
+    source: str = "chat",
+) -> dict:
+    rows = _fallback_read("family_reminders", [])
+    row = _reminder_row(profile_slug, message, remind_at, include_todos, source)
+    rows.append(row)
+    _fallback_write("family_reminders", rows)
+    return row
+
+
+@resilient(fallback_return=[])
+def get_reminders(profile_slug: Optional[str] = None, only_pending: bool = True) -> list[dict]:
+    """Promemoria in ordine di scadenza, opzionalmente solo quelli attivi."""
+    client = get_client()
+    if client is None:
+        return []
+    query = client.table("family_reminders").select("*")
+    if profile_slug:
+        query = query.eq("profile_slug", profile_slug)
+    if only_pending:
+        query = query.eq("status", "pending")
+    response = query.order("remind_at", desc=False).execute()
+    return sorted(list(response.data or []), key=lambda row: str(row.get("remind_at") or ""))
+
+
+def _fb_get_reminders(profile_slug: Optional[str] = None, only_pending: bool = True) -> list[dict]:
+    rows = _fallback_read("family_reminders", [])
+    if profile_slug:
+        rows = [row for row in rows if row.get("profile_slug") == profile_slug]
+    if only_pending:
+        rows = [row for row in rows if row.get("status") == "pending"]
+    return sorted(rows, key=lambda row: str(row.get("remind_at") or ""))
+
+
+@resilient(fallback_return=False)
+def cancel_reminder(reminder_id: str, profile_slug: str) -> bool:
+    """Annulla un promemoria solo se appartiene al profilo autenticato."""
+    client = get_client()
+    if client is None:
+        return False
+    response = (
+        client.table("family_reminders")
+        .update({"status": "cancelled"})
+        .eq("id", reminder_id)
+        .eq("profile_slug", profile_slug)
+        .eq("status", "pending")
+        .execute()
+    )
+    return bool(response.data)
+
+
+def _fb_cancel_reminder(reminder_id: str, profile_slug: str) -> bool:
+    rows = _fallback_read("family_reminders", [])
+    changed = False
+    for row in rows:
+        if row.get("id") == reminder_id and row.get("profile_slug") == profile_slug:
+            if row.get("status") == "pending":
+                row["status"] = "cancelled"
+                changed = True
+            break
+    if changed:
+        _fallback_write("family_reminders", rows)
+    return changed
+
+
+@resilient(fallback_return=False)
+def mark_reminder_local_scheduled(reminder_id: str, profile_slug: str) -> bool:
+    """Conferma che l'app ha pianificato la notifica locale (evita il push duplicato)."""
+    client = get_client()
+    if client is None:
+        return False
+    response = (
+        client.table("family_reminders")
+        .update({"local_scheduled_at": _now_iso()})
+        .eq("id", reminder_id)
+        .eq("profile_slug", profile_slug)
+        .eq("status", "pending")
+        .execute()
+    )
+    return bool(response.data)
+
+
+def _fb_mark_reminder_local_scheduled(reminder_id: str, profile_slug: str) -> bool:
+    rows = _fallback_read("family_reminders", [])
+    for row in rows:
+        if row.get("id") == reminder_id and row.get("profile_slug") == profile_slug:
+            row["local_scheduled_at"] = _now_iso()
+            _fallback_write("family_reminders", rows)
+            return True
+    return False
+
+
+@resilient(fallback_return=False)
+def mark_reminder_sent(reminder_id: str) -> bool:
+    client = get_client()
+    if client is None:
+        return False
+    response = (
+        client.table("family_reminders")
+        .update({"status": "sent", "sent_at": _now_iso()})
+        .eq("id", reminder_id)
+        .eq("status", "pending")
+        .execute()
+    )
+    return bool(response.data)
+
+
+def _fb_mark_reminder_sent(reminder_id: str) -> bool:
+    rows = _fallback_read("family_reminders", [])
+    for row in rows:
+        if row.get("id") == reminder_id and row.get("status") == "pending":
+            row["status"] = "sent"
+            row["sent_at"] = _now_iso()
+            _fallback_write("family_reminders", rows)
+            return True
+    return False
+
+
+@resilient(fallback_return=[])
+def get_due_reminders(now_iso: str, limit: int = 50) -> list[dict]:
+    client = get_client()
+    if client is None:
+        return []
+    response = (
+        client.table("family_reminders")
+        .select("*")
+        .eq("status", "pending")
+        .lte("remind_at", now_iso)
+        .order("remind_at", desc=False)
+        .limit(max(1, int(limit)))
+        .execute()
+    )
+    return list(response.data or [])
+
+
+def _fb_get_due_reminders(now_iso: str, limit: int = 50) -> list[dict]:
+    rows = [
+        row
+        for row in _fallback_read("family_reminders", [])
+        if row.get("status") == "pending" and str(row.get("remind_at") or "") <= now_iso
+    ]
+    return sorted(rows, key=lambda row: str(row.get("remind_at") or ""))[: max(1, int(limit))]
 
 
 # ====================================================================

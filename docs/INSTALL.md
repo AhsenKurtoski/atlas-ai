@@ -14,7 +14,7 @@ conoscere Xcode o EAS.
 
 | Dispositivo | Cosa scaricare | Tempo |
 |---|---|---|
-| **Android (telefono o tablet)** | [APK ATLAS AI](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.1.0/ATLAS-AI-android.apk) | 1 minuto |
+| **Android (telefono o tablet)** | [APK ATLAS AI](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.2.0/ATLAS-AI-android.apk) | 1 minuto |
 | **iPhone / iPad** | TestFlight o build firmata (vedi sotto) | 10 minuti + account Apple |
 | **Mac (simulatore iPhone/iPad)** | Xcode + `npx expo run:ios` | 15 minuti, gratis |
 | **Sviluppo su telefono** | Expo Go / development build | 2 minuti |
@@ -35,8 +35,13 @@ una build di sviluppo) e devi ricompilare con `EXPO_PUBLIC_API_URL` corretto.
 ### Telefono o tablet Android
 
 1. Apri dal dispositivo il link diretto:
-   **[ATLAS-AI-android.apk](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.1.0/ATLAS-AI-android.apk)**
-   (oppure la [pagina della release](https://github.com/AhsenKurtoski/atlas-ai/releases/tag/android-v3.1.0)).
+   **[ATLAS-AI-android.apk](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.2.0/ATLAS-AI-android.apk)**
+   (oppure la [pagina della release](https://github.com/AhsenKurtoski/atlas-ai/releases/tag/android-v3.2.0)).
+
+   Al primo accesso **consenti le notifiche**: servono per i promemoria
+   ("Ricordami verso le 4-5 di andare da Lidl"). Su Android 12+ l'app include
+   anche il permesso per gli avvisi puntuali; se il sistema lo richiede,
+   abilita «Sveglie e promemoria» nelle impostazioni dell'app.
 2. Tocca **ATLAS-AI-android.apk** (circa 156 MB).
 3. Se Chrome chiede il permesso, scegli **Imposta** → **Consenti da questa fonte**.
    Su Android 13+ il percorso può essere **Installa app sconosciute**.
@@ -202,7 +207,7 @@ Tailscale già configurato.
 ### 3. Verifica veloce
 
 ```bash
-cd backend && ./venv/Scripts/python.exe -m pytest -q   # 146 test
+cd backend && ./venv/Scripts/python.exe -m pytest -q   # 163 test
 cd frontend && npm run typecheck                      # 0 errori
 cd frontend && npx expo-doctor                        # 17/17 check
 cd frontend && npx expo export --platform android

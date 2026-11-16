@@ -1,5 +1,5 @@
 """
-ATLAS AI v3.1 — Entrypoint principale FastAPI.
+ATLAS AI v3.2 — Entrypoint principale FastAPI.
 
 Sicurezza & architettura:
 - Token di sessione firmati HMAC (stateless → sicuri anche con più worker)
@@ -34,10 +34,12 @@ from slowapi.util import get_remote_address
 from starlette.concurrency import run_in_threadpool
 
 from app.ai_router import ai_router
+from app.core.context import current_profile
 from app.core.database import (
     add_spesa,
     add_todo,
     complete_todo_by_index,
+    delete_todo_by_index,
     delete_profile as db_delete_profile,
     deactivate_push_token,
     fetch_profiles,
@@ -46,12 +48,15 @@ from app.core.database import (
     get_italian_leaderboard,
     get_italian_progress,
     get_push_tokens,
+    get_reminders,
     get_settings,
     get_todos,
     get_user_memory,
     is_mock_mode,
     save_message,
     save_push_token,
+    cancel_reminder,
+    mark_reminder_local_scheduled,
     update_settings,
     upsert_profile,
     add_italian_progress,
@@ -109,7 +114,7 @@ limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
 # ---------------- Lifespan ----------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("🚀 Avvio ATLAS AI v3.1 - ambiente=%s", os.getenv("APP_ENV", "development"))
+    log.info("🚀 Avvio ATLAS AI v3.2 - ambiente=%s", os.getenv("APP_ENV", "development"))
     if scheduler_enabled():
         try:
             start_scheduler()
@@ -152,9 +157,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="ATLAS AI v3.1 Backend",
+    title="ATLAS AI v3.2 Backend",
     description="Assistente AI per la famiglia con LLM, tool reali e notifiche push",
-    version="3.1.0",
+    version="3.2.0",
     lifespan=lifespan,
 )
 app.state.limiter = limiter
@@ -376,6 +381,7 @@ async def chat_endpoint(
     # Il browser usa il profilo corrente per isolare cookie/pagine; il modello
     # gira in un thread per non bloccare l'event loop durante navigazioni lunghe.
     profilo_browser = browser_profile.set(slug)
+    profilo_tool = current_profile.set(slug)
     try:
         risposta = await run_in_threadpool(
             ai_router.chiedi,
@@ -385,6 +391,7 @@ async def chat_endpoint(
             immagine=immagine,
         )
     finally:
+        current_profile.reset(profilo_tool)
         browser_profile.reset(profilo_browser)
     save_message(profile_slug=slug, role="ai", content=str(risposta))
 
@@ -483,6 +490,72 @@ def completa_todo(
     if complete_todo_by_index(numero):
         return GenericResponse(status="ok", message=f"Todo {numero} completato.")
     return GenericResponse(status="error", message="Numero task non valido.")
+
+
+@app.delete("/todos/{numero}", response_model=GenericResponse)
+@limiter.limit("30/minute")
+def elimina_todo(
+    request: Request,
+    numero: int,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    if delete_todo_by_index(numero):
+        return GenericResponse(status="ok", message=f"Task {numero} eliminato.")
+    return GenericResponse(status="error", message="Numero task non valido.")
+
+
+# ---------------- Promemoria personali ----------------
+def _reminder_payload(row: dict, pending_tasks: list[str] | None = None) -> dict:
+    remind_at = str(row.get("remind_at") or "")
+    include_todos = bool(row.get("include_todos", True))
+    return {
+        "id": str(row.get("id") or ""),
+        "message": str(row.get("message") or "Promemoria"),
+        "remind_at": remind_at,
+        "include_todos": include_todos,
+        "status": str(row.get("status") or "pending"),
+        "local_scheduled": bool(row.get("local_scheduled_at")),
+        "lista": (pending_tasks or []) if include_todos else [],
+    }
+
+
+@app.get("/promemoria", response_model=GenericResponse)
+@limiter.limit("60/minute")
+def lista_promemoria(
+    request: Request,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    rows = get_reminders(profile_slug=slug, only_pending=True)
+    pending_tasks = [
+        str(todo.get("task_text") or todo.get("task") or "").strip()
+        for todo in get_todos(only_pending=True)
+        if (todo.get("task_text") or todo.get("task"))
+    ]
+    return GenericResponse(status="ok", data=[_reminder_payload(row, pending_tasks) for row in rows])
+
+
+@app.delete("/promemoria/{reminder_id}", response_model=GenericResponse)
+@limiter.limit("30/minute")
+def annulla_promemoria_endpoint(
+    request: Request,
+    reminder_id: str,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    if cancel_reminder(reminder_id, slug):
+        return GenericResponse(status="ok", message="Promemoria annullato.")
+    return GenericResponse(status="error", message="Promemoria non trovato o già annullato.")
+
+
+@app.post("/promemoria/{reminder_id}/programmato", response_model=GenericResponse)
+@limiter.limit("60/minute")
+def conferma_promemoria_locale(
+    request: Request,
+    reminder_id: str,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    if mark_reminder_local_scheduled(reminder_id, slug):
+        return GenericResponse(status="ok", message="Notifica locale registrata.")
+    return GenericResponse(status="error", message="Promemoria non trovato.")
 
 
 # ---------------- Budget / Spese ----------------

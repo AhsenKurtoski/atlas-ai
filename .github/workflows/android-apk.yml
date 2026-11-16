@@ -63,8 +63,8 @@ jobs:
       - name: Pubblica release scaricabile
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: android-v3.1.0
-          name: ATLAS AI Android v3.1.0 (Tailscale Funnel)
+          tag_name: android-v3.2.0
+          name: ATLAS AI Android v3.2.0 (Tailscale Funnel)
           files: frontend/ATLAS-AI-android.apk
           prerelease: true
           generate_release_notes: true

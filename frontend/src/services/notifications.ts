@@ -20,6 +20,8 @@ import apiService from './api';
 
 const PUSH_TOKEN_KEY = '@atlas/push_token';
 const LOCAL_IDS_KEY = '@atlas/local_notifications';
+const REMINDER_IDS_KEY = '@atlas/reminder_notifications';
+const ENABLED_KEY = '@atlas/notifications_enabled';
 const CHANNEL_ID = 'atlas_default';
 
 export interface PushRegistration {
@@ -68,6 +70,27 @@ export async function ensureNotificationPermission(): Promise<boolean> {
   if (!current.canAskAgain) return false;
   const requested = await Notifications.requestPermissionsAsync();
   return requested.granted;
+}
+
+/** Mostra subito una notifica locale reale (utile per verificare i permessi). */
+export async function sendLocalTestNotification(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
+  try {
+    const granted = await ensureNotificationPermission();
+    if (!granted) return false;
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '🔔 Test ATLAS',
+        body: 'Le notifiche locali funzionano su questo dispositivo.',
+        sound: 'default',
+        data: { tipo: 'test_locale' },
+      },
+      trigger: null,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function projectId(): string | undefined {
@@ -156,6 +179,7 @@ const REMINDERS: ReminderSpec[] = [
 
 /** Pianifica i promemoria locali (idempotente: cancella i precedenti). */
 export async function syncLocalReminders(enabled: boolean): Promise<void> {
+  await AsyncStorage.setItem(ENABLED_KEY, enabled ? '1' : '0').catch(() => {});
   await cancelLocalReminders();
   if (!enabled) return;
 
@@ -172,7 +196,12 @@ export async function syncLocalReminders(enabled: boolean): Promise<void> {
           sound: 'default',
           data: { tipo: 'promemoria_locale', chiave: reminder.key },
         },
-        trigger: { hour: reminder.hour, minute: reminder.minute, repeats: true } as any,
+        trigger: {
+          hour: reminder.hour,
+          minute: reminder.minute,
+          repeats: true,
+          channelId: CHANNEL_ID,
+        } as any,
       });
       ids.push(id);
     } catch {
@@ -180,6 +209,27 @@ export async function syncLocalReminders(enabled: boolean): Promise<void> {
     }
   }
   await AsyncStorage.setItem(LOCAL_IDS_KEY, JSON.stringify(ids));
+}
+
+/** Rispetta la scelta salvata dall'utente (default: attive al primo avvio). */
+export async function syncLocalRemindersFromPreference(): Promise<void> {
+  const stored = await AsyncStorage.getItem(ENABLED_KEY).catch(() => null);
+  await syncLocalReminders(stored !== '0');
+}
+
+/** Allinea i promemoria giornalieri alla impostazione condivisa del backend. */
+export async function syncLocalRemindersFromSettings(): Promise<void> {
+  try {
+    const response = await apiService.getSettings();
+    const enabled = response.data?.notifiche?.attive;
+    if (typeof enabled === 'boolean') {
+      await syncLocalReminders(enabled);
+      return;
+    }
+  } catch {
+    // Offline o token non ancora disponibile: usa la preferenza del dispositivo.
+  }
+  await syncLocalRemindersFromPreference();
 }
 
 export async function cancelLocalReminders(): Promise<void> {
@@ -192,6 +242,137 @@ export async function cancelLocalReminders(): Promise<void> {
   } finally {
     await AsyncStorage.removeItem(LOCAL_IDS_KEY);
   }
+}
+
+// ---------------- Promemoria personali della chat ----------------
+
+interface ScheduledReminderLink {
+  reminderId: string;
+  notificationId: string;
+}
+
+export interface ReminderSyncResult {
+  ok: boolean;
+  scheduled: number;
+  message: string;
+}
+
+async function cancelReminderNotifications(): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(REMINDER_IDS_KEY);
+    const links: ScheduledReminderLink[] = raw ? JSON.parse(raw) : [];
+    await Promise.all(
+      links.map((link) =>
+        Notifications.cancelScheduledNotificationAsync(link.notificationId).catch(() => {})
+      )
+    );
+  } catch {
+    // Nessun promemoria personalizzato salvato.
+  } finally {
+    await AsyncStorage.removeItem(REMINDER_IDS_KEY).catch(() => {});
+  }
+}
+
+/** Annulla solo le notifiche dei promemoria creati dalla chat. */
+export async function cancelUpcomingReminderNotifications(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  await cancelReminderNotifications();
+}
+
+/**
+ * Sincronizza i promemoria futuri dal backend e li pianifica come notifiche
+ * locali reali. Funziona anche se l'app viene chiusa e non richiede EAS/FCM.
+ * La conferma al backend evita che lo scheduler invii anche una push duplicata.
+ */
+export async function syncUpcomingReminders(): Promise<ReminderSyncResult> {
+  if (Platform.OS === 'web') {
+    return { ok: false, scheduled: 0, message: 'Le notifiche locali non sono disponibili sul web.' };
+  }
+
+  const enabled = await AsyncStorage.getItem(ENABLED_KEY).catch(() => null);
+  if (enabled === '0') {
+    await cancelReminderNotifications();
+    return {
+      ok: true,
+      scheduled: 0,
+      message: 'Notifiche disattivate: riattivale da Impostazioni per ricevere i promemoria.',
+    };
+  }
+
+  let rows: any[] = [];
+  try {
+    const response = await apiService.getReminders();
+    rows = response.data ?? [];
+  } catch (error: any) {
+    return {
+      ok: false,
+      scheduled: 0,
+      message: error?.message ?? 'Promemoria non scaricati dal backend.',
+    };
+  }
+
+  if (!rows.length) {
+    await cancelReminderNotifications();
+    return { ok: true, scheduled: 0, message: 'Nessun promemoria futuro da programmare.' };
+  }
+
+  const granted = await ensureNotificationPermission();
+  if (!granted) {
+    return {
+      ok: false,
+      scheduled: 0,
+      message: 'Permesso notifiche negato: il promemoria resta nella lista, ma non può avvisarti.',
+    };
+  }
+
+  // Solo dopo aver letto i dati annulliamo le vecchie pianificazioni: un errore
+  // di rete non deve far perdere i promemoria già presenti sul dispositivo.
+  await cancelReminderNotifications();
+  const links: ScheduledReminderLink[] = [];
+  let skipped = 0;
+
+  for (const row of rows) {
+    const when = new Date(String(row?.remind_at ?? ''));
+    if (!row?.id || Number.isNaN(when.getTime()) || when.getTime() <= Date.now()) {
+      skipped += 1;
+      continue;
+    }
+    const lista: string[] = Array.isArray(row.lista) ? row.lista : [];
+    let body = String(row.message ?? 'Promemoria ATLAS');
+    if (row.include_todos && lista.length) {
+      const anteprima = lista.slice(0, 12).join(', ');
+      body += `\n🛒 Lista (${lista.length}): ${anteprima}${lista.length > 12 ? '…' : ''}`;
+    }
+    try {
+      const notificationId = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: row.include_todos ? '🛒 Promemoria spesa' : '⏰ Promemoria ATLAS',
+          body: body.slice(0, 800),
+          sound: 'default',
+          data: { tipo: 'promemoria', reminder_id: String(row.id) },
+        },
+        trigger: { date: when, channelId: CHANNEL_ID } as any,
+      });
+      links.push({ reminderId: String(row.id), notificationId });
+      await apiService.markReminderLocalScheduled(String(row.id)).catch(() => {});
+    } catch {
+      skipped += 1;
+    }
+  }
+
+  if (links.length) {
+    await AsyncStorage.setItem(REMINDER_IDS_KEY, JSON.stringify(links));
+  }
+  return {
+    ok: true,
+    scheduled: links.length,
+    message:
+      links.length > 0
+        ? `${links.length} promemoria programmati sul dispositivo.`
+        : skipped > 0
+          ? 'Alcuni promemoria sono già scaduti o non pianificabili.'
+          : 'Nessun promemoria futuro da programmare.',
+  };
 }
 
 /** Numero di notifiche locali pianificate (utile per il debug in Impostazioni). */

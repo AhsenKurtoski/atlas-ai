@@ -73,7 +73,7 @@ cd backend
 Risultato atteso:
 
 ```text
-146 passed
+163 passed
 ```
 
 Test mirati:
@@ -121,7 +121,7 @@ Risposta attesa (valori indicativi):
 {
   "status": "ok",
   "profili": 5,
-  "automazioni": 11,
+  "automazioni": 12,
   "scheduler_attivo": true,
   "ambiente": "development",
   "db_mode": "locale",
@@ -351,7 +351,7 @@ Dopo ogni push su `main`, apri:
 
 Devono essere verdi entrambi i job:
 
-- **Backend (pytest, Python 3.12)** — installa Chromium e esegue 146 test;
+- **Backend (pytest, Python 3.12)** — installa Chromium e esegue 163 test;
 - **Frontend (TypeScript)** — `npm ci` + `tsc --noEmit`.
 
 Se il job backend fallisce, apri il log del passo “Test” e cerca il primo `FAILED`:
@@ -379,7 +379,7 @@ non ignorare un test rosso. Se fallisce l'installazione di Chromium, verifica
 
 ## 15. Checklist finale
 
-- [ ] `pytest -q` → 146 passed
+- [ ] `pytest -q` → 163 passed
 - [ ] `pytest tests/test_browser.py -v` → 18 passed
 - [ ] `pytest tests/test_ai_loop.py -v` → 2 passed
 - [ ] `npx tsc --noEmit` → 0 errori

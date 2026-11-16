@@ -171,7 +171,7 @@ class HealthResponse(BaseModel):
     automazioni: int
     scheduler_attivo: bool = False
     ambiente: str
-    versione: str = "3.1.0"
+    versione: str = "3.2.0"
     db_mode: str = "locale"
     notifiche: str = "expo"
     llm: bool = False

@@ -130,7 +130,32 @@ ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS platform VARCHAR(20) DEFAULT ''
 
 
 -- ==========================================================
---  7. Impostazioni applicazione (automazioni, notifiche, soglie)
+--  7. Promemoria personali (creati dalla chat / scheduler)
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS family_reminders (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    profile_slug VARCHAR(50) NOT NULL REFERENCES profiles(slug) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    remind_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    include_todos BOOLEAN DEFAULT TRUE,
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'cancelled')),
+    source VARCHAR(30) DEFAULT 'chat',
+    local_scheduled_at TIMESTAMP WITH TIME ZONE,
+    sent_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_reminders_profile_time
+    ON family_reminders(profile_slug, status, remind_at);
+
+-- Migrazioni per installazioni che avevano già la tabella senza questi campi.
+ALTER TABLE family_reminders ADD COLUMN IF NOT EXISTS local_scheduled_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE family_reminders ADD COLUMN IF NOT EXISTS sent_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE family_reminders ADD COLUMN IF NOT EXISTS source VARCHAR(30) DEFAULT 'chat';
+
+
+-- ==========================================================
+--  8. Impostazioni applicazione (automazioni, notifiche, soglie)
 -- ==========================================================
 CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
@@ -140,7 +165,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 
 -- ==========================================================
---  8. Token revocati (logout reale, denylist fino a scadenza)
+--  9. Token revocati (logout reale, denylist fino a scadenza)
 -- ==========================================================
 CREATE TABLE IF NOT EXISTS revoked_tokens (
     token_hash TEXT PRIMARY KEY,

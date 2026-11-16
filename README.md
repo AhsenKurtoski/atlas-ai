@@ -1,4 +1,4 @@
-# 🧠 ATLAS AI v3.1
+# 🧠 ATLAS AI v3.2
 
 Assistente AI **family-first** con backend Python/FastAPI + app mobile React Native (Expo).
 
@@ -7,7 +7,7 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 > integrazione reale con Gmail/Calendar e server MCP, e un **agente browser Chromium**
 > che apre siti, clicca, compila moduli e legge pagine dinamiche.
 
-**Licenza MIT** · CI su GitHub Actions · 146 test backend · TypeScript strict a 0 errori
+**Licenza MIT** · CI su GitHub Actions · 163 test backend · TypeScript strict a 0 errori
 
 <p align="center">
   <a href="media/atlas-ai-demo.mp4"><img src="media/atlas-ai-poster.jpg" width="250" alt="Guarda il video demo di ATLAS AI"></a>
@@ -23,7 +23,7 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 
 | Dispositivo | Come |
 |---|---|
-| **Android (telefono/tablet)** | Scarica l'[APK installabile](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.1.0/ATLAS-AI-android.apk), apri il file e consenti l'installazione da browser. |
+| **Android (telefono/tablet)** | Scarica l'[APK installabile](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.2.0/ATLAS-AI-android.apk), apri il file e consenti l'installazione da browser. |
 | **iPhone / iPad** | TestFlight/App Store (Apple Developer) oppure firma gratuita con Mac + Apple ID. |
 | **Tablet** | Stessa app: layout responsive a due colonne, nessuna build separata. |
 | **Sviluppo** | Backend + `npx expo start`; dettagli sotto. |
@@ -49,6 +49,24 @@ Screenshot reali dell'app (build web con lo stesso codice React Native). Il vide
 
 ---
 
+## ⏰ Promemoria intelligenti e lista spesa
+
+Scrivi in chat come parleresti a una persona:
+
+> «Ricordami che verso le 4-5 devo andare a fare la spesa da Lidl»
+
+ATLAS crea un promemoria reale, allega la lista della spesa ancora aperta e
+pianifica una **notifica locale sul telefono** (funziona anche ad app chiusa,
+senza EAS o Firebase). Se dici «senza lista», non la allega. Dalla schermata
+**Lista spesa** puoi aggiungere, completare, eliminare e pulire gli elementi;
+in **Impostazioni → Promemoria** vedi e annulli quelli attivi.
+
+La prima volta il sistema chiede il permesso notifiche. Se lo neghi, il
+promemoria resta salvato nella lista ma il telefono non può avvisarti: ATLAS
+te lo dice esplicitamente invece di fingere che sia tutto attivo.
+
+---
+
 ## 🏗️ Architettura
 
 ```
@@ -56,10 +74,10 @@ Screenshot reali dell'app (build web con lo stesso codice React Native). Il vide
 │   APP MOBILE                 │ ─────────────────────▶ │  BACKEND FASTAPI (Python 3.11-3.13)     │
 │   React Native · Expo 51     │  Bearer token firmato  │                                         │
 │   NativeWind / Tailwind      │ ◀───────────────────── │  - 30 endpoint REST                     │
-│   AsyncStorage (persistenza) │   Chat + Pin + Push    │  - 45 tool reali per Gemini             │
-│   React Navigation 6         │                        │  - 8 tool browser (Chromium headless)   │
+│   AsyncStorage (persistenza) │   Chat + Pin + Push    │  - 50 tool reali per Gemini             │
+│   React Navigation 6         │                        │  - 10 tool browser (Chromium headless)  │
 │   expo-notifications         │                        │  - Auth PIN bcrypt + token HMAC 8h      │
-└──────────────────────────────┘                        │  - 11 automazioni APScheduler           │
+└──────────────────────────────┘                        │  - 12 automazioni APScheduler           │
                                                         │  - DB: Supabase ▶ fallback JSON locale  │
                                                         │  - Client MCP (JSON-RPC/HTTP)           │
                                                         └─────────────────────────────────────────┘
@@ -216,12 +234,13 @@ dell'app come testo); le email vengono lette solo se colleghi Gmail.
 | **Foto dalla galleria in chat** (analisi e OCR) | ✅ reale | `GOOGLE_API_KEY_1` (Gemini vision) |
 | Dettatura vocale in chat | ✅ reale | `GOOGLE_API_KEY_1` (Gemini trascrive l'audio) |
 | **Agente browser** (apre siti, clicca, compila, legge JS) | ✅ reale | Chromium (`playwright install chromium`) |
-| Todos / lista spesa condivisa | ✅ reale | — |
+| **Promemoria intelligenti** creati in chat ("verso le 4-5 devo andare da Lidl") | ✅ reale | notifiche locali attive |
+| **Lista spesa condivisa** con aggiunta, completamento, eliminazione e pulizia | ✅ reale | — |
 | Budget per categoria + totale mese | ✅ reale | — |
 | Dashboard con KPI reali | ✅ reale | — |
 | Notifiche locali programmate (acqua, lezione, …) | ✅ reale | — |
 | Push remote alle automazioni | ✅ reale | `extra.eas.projectId` in `app.json` |
-| 11 automazioni (meteo, crypto, budget, email, italiano, calendario) | ✅ reale | credenziali dei servizi usati |
+| 12 automazioni (meteo, crypto, budget, email, italiano, calendario, promemoria) | ✅ reale | credenziali dei servizi usati |
 | Lezioni + quiz italiano con punti/streak | ✅ reale | — |
 | Gmail: lettura inbox e appuntamenti | ✅ reale | OAuth Google |
 | Calendar: crea evento / agenda del giorno | ✅ reale | OAuth Google |
@@ -237,7 +256,7 @@ lo dice e spiega come attivarlo.
 ## 🧪 Qualità & test
 
 ```bash
-cd backend && pytest -q          # 146 test (18 browser Chromium + 2 loop Gemini finto)
+cd backend && pytest -q          # 163 test (browser Chromium reale + 2 loop Gemini finto)
 cd frontend && npm run typecheck  # 0 errori (strict)
 ```
 
@@ -256,6 +275,7 @@ cd frontend && npm run typecheck  # 0 errori (strict)
 | `test_chat_image.py` | invio foto: PNG valido, MIME/base64/dimensioni rifiutati correttamente |
 | `test_browser.py` | Chromium reale: navigazione, click, form, select, scroll, storia, sessioni isolate, DNS su XHR/iframe/immagini, SSRF |
 | `test_ai_loop.py` | loop Gemini con client finto: tool multipli, risposte function-response, limite turni |
+| `test_reminders.py` | parser italiano ("verso le 4-5"), persistenza, API, scheduler push/local |
 
 ---
 
@@ -267,7 +287,7 @@ atlas-ai/
 │   ├── main.py                 # API FastAPI (auth, chat, notifiche, impostazioni, italiano)
 │   ├── app/
 │   │   ├── ai_router.py        # Gemini + function calling + trascrizione audio
-│   │   ├── scheduler.py        # 11 automazioni reali con push
+│   │   ├── scheduler.py        # 12 automazioni reali con push
 │   │   ├── notifiche.py        # Expo Push / FCM
 │   │   ├── core/
 │   │   │   ├── database.py     # Supabase + fallback locale (todo, budget, token, settings)
@@ -280,8 +300,8 @@ atlas-ai/
 │   │   ├── services/
 │   │   │   ├── google_oauth.py # OAuth Gmail/Calendar
 │   │   │   └── browser.py      # agente Chromium: worker, sessioni, SSRF
-│   │   └── tools/              # 45 tool (browser, family, finance, travel, utility, MCP, italiano)
-│   ├── tests/                  # 146 test
+│   │   └── tools/              # 50 tool (browser, family, finance, travel, utility, MCP, italiano)
+│   ├── tests/                  # 163 test
 │   └── supabase_schema.sql
 └── frontend/
     ├── App.tsx                 # AuthContext, sessione, navigazione, notifiche

@@ -21,7 +21,10 @@ from app.tools.travel import (
 )
 from app.tools.family import (
     add_family_todo,
+    annulla_promemoria,
     completa_todo,
+    crea_promemoria,
+    elenca_promemoria,
     get_advice,
     get_family_todos,
     get_random_joke,
@@ -73,6 +76,9 @@ ATLAS_TOOLS = [
     add_family_todo,
     get_family_todos,
     completa_todo,
+    crea_promemoria,
+    elenca_promemoria,
+    annulla_promemoria,
     invia_push_famigliare,
     get_random_joke,
     get_advice,

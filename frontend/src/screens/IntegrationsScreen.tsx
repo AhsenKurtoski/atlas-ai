@@ -13,11 +13,14 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from '@react-navigation/native';
-import apiService, { AppSettings, GoogleStatus, ProfileRow } from '../services/api';
+import apiService, { AppSettings, GoogleStatus, ProfileRow, ReminderRow } from '../services/api';
 import {
   registerPushToken,
   unregisterPushToken,
   syncLocalReminders,
+  syncUpcomingReminders,
+  cancelUpcomingReminderNotifications,
+  sendLocalTestNotification,
   scheduledRemindersCount,
 } from '../services/notifications';
 import { useAuth } from '../../App';
@@ -33,6 +36,7 @@ export default function IntegrationsScreen() {
   const [google, setGoogle] = useState<GoogleStatus | null>(null);
   const [profiles, setProfiles] = useState<Record<string, ProfileRow>>({});
   const [devices, setDevices] = useState(0);
+  const [reminders, setReminders] = useState<ReminderRow[]>([]);
   const [scheduled, setScheduled] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -43,11 +47,12 @@ export default function IntegrationsScreen() {
   const [newLivello, setNewLivello] = useState('B1');
 
   const load = useCallback(async () => {
-    const [settingsResult, googleResult, profilesResult, dashboardResult] = await Promise.allSettled([
+    const [settingsResult, googleResult, profilesResult, dashboardResult, remindersResult] = await Promise.allSettled([
       apiService.getSettings(),
       apiService.getGoogleStatus(),
       apiService.getProfiles(),
       apiService.getDashboard(),
+      apiService.getReminders(),
     ]);
 
     if (settingsResult.status === 'fulfilled' && settingsResult.value.data) {
@@ -61,6 +66,11 @@ export default function IntegrationsScreen() {
     }
     if (dashboardResult.status === 'fulfilled' && dashboardResult.value.data) {
       setDevices(dashboardResult.value.data.dispositivi_notifiche);
+    }
+    if (remindersResult.status === 'fulfilled' && Array.isArray(remindersResult.value.data)) {
+      setReminders(remindersResult.value.data);
+    } else {
+      setReminders([]);
     }
     setScheduled(await scheduledRemindersCount());
     setLoading(false);
@@ -118,6 +128,7 @@ export default function IntegrationsScreen() {
       if (value) {
         await syncLocalReminders(true);
         const registration = await registerPushToken(profileId ?? 'io');
+        await syncUpcomingReminders();
         Alert.alert(
           registration.ok ? 'Notifiche attive' : 'Promemoria locali attivi',
           registration.message
@@ -125,6 +136,7 @@ export default function IntegrationsScreen() {
       } else {
         await syncLocalReminders(false);
         await unregisterPushToken();
+        await cancelUpcomingReminderNotifications();
       }
       setScheduled(await scheduledRemindersCount());
     } catch (error: any) {
@@ -133,13 +145,54 @@ export default function IntegrationsScreen() {
     }
   };
 
+  const cancelReminder = (reminder: ReminderRow) => {
+    Alert.alert('Annullare il promemoria?', reminder.message, [
+      { text: 'No', style: 'cancel' },
+      {
+        text: 'Annulla promemoria',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiService.cancelReminder(reminder.id);
+            await syncUpcomingReminders();
+            await load();
+          } catch (error: any) {
+            Alert.alert('Errore', error?.message ?? 'Promemoria non annullato.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const formatReminderTime = (value: string): string => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString('it-IT', {
+      weekday: 'short',
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
   const sendTest = async () => {
     setBusy('test');
     try {
       const response = await apiService.sendTestNotification();
-      Alert.alert(response.status === 'ok' ? 'Inviata' : 'Attenzione', response.message ?? '');
+      if (response.status === 'ok') {
+        Alert.alert('Inviata', response.message ?? '');
+      } else if (await sendLocalTestNotification()) {
+        Alert.alert('Notifica locale inviata', 'Controlla il centro notifiche del dispositivo.');
+      } else {
+        Alert.alert('Attenzione', response.message ?? 'Nessun canale notifiche disponibile.');
+      }
     } catch (error: any) {
-      Alert.alert('Errore', error?.message ?? 'Invio non riuscito.');
+      if (await sendLocalTestNotification()) {
+        Alert.alert('Notifica locale inviata', 'Controlla il centro notifiche del dispositivo.');
+      } else {
+        Alert.alert('Errore', error?.message ?? 'Invio non riuscito.');
+      }
     } finally {
       setBusy(null);
     }
@@ -333,6 +386,41 @@ export default function IntegrationsScreen() {
               {busy === 'test' ? 'Invio...' : 'Invia notifica di test'}
             </Text>
           </TouchableOpacity>
+        </View>
+
+        <View className="bg-[rgba(255,255,255,0.06)] p-6 rounded-[32px] mb-8 border border-[rgba(255,255,255,0.1)]">
+          <View className="flex-row justify-between items-center mb-3">
+            <Text className="text-xl font-bold text-white">⏰ Promemoria</Text>
+            <Text className="text-gray-400 text-sm">{reminders.length}</Text>
+          </View>
+          <Text className="text-gray-400 mb-4">
+            Creati dalla chat. La notifica locale funziona anche ad app chiusa; senza permesso resta il promemoria nella lista.
+          </Text>
+          {reminders.length ? (
+            reminders.slice(0, 8).map((reminder) => (
+              <View
+                key={reminder.id}
+                className="bg-[#ffffff08] p-4 rounded-2xl mb-3 border border-[#ffffff10]"
+              >
+                <View className="flex-row justify-between items-start">
+                  <View className="flex-1 pr-3">
+                    <Text className="text-white font-bold">{reminder.message}</Text>
+                    <Text className="text-[#a5b4fc] text-sm mt-1">{formatReminderTime(reminder.remind_at)}</Text>
+                    {reminder.include_todos && reminder.lista?.length ? (
+                      <Text className="text-gray-400 text-xs mt-1" numberOfLines={2}>
+                        🛒 {reminder.lista.join(', ')}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <TouchableOpacity onPress={() => cancelReminder(reminder)} className="bg-[#ef444420] px-3 py-2 rounded-xl">
+                    <Text className="text-[#fca5a5] font-bold text-sm">Annulla</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          ) : (
+            <Text className="text-gray-400">Nessun promemoria attivo. Chiedi in chat: «Ricordami domani alle 9 di chiamare il medico».</Text>
+          )}
         </View>
 
         <Text className="text-2xl font-bold text-white mb-5 ml-2">Regole Background (Cron)</Text>

@@ -15,7 +15,7 @@ class TestHealth:
         assert response.status_code == 200
         body = response.json()
         assert body.get("status") == "ok"
-        assert body.get("versione") == "3.1.0"
+        assert body.get("versione") == "3.2.0"
         assert body.get("profili", 0) >= 5
         assert body.get("db_mode") in ("locale", "supabase")
         assert isinstance(body.get("llm"), bool)
@@ -148,6 +148,16 @@ class TestTodosEndpoints:
         response = client.get("/todos?filtro=pending", headers=auth_headers)
         assert response.status_code == 200
         assert all(todo.get("done") is False for todo in response.json().get("data") or [])
+
+    def test_elimina_todo(self, client, auth_headers):
+        client.post("/todos", json={"task": "Da eliminare"}, headers=auth_headers)
+        data = client.get("/todos", headers=auth_headers).json().get("data") or []
+        index = next(i for i, todo in enumerate(data, 1) if todo.get("task") == "Da eliminare")
+        response = client.delete(f"/todos/{index}", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json().get("status") == "ok"
+        remaining = client.get("/todos", headers=auth_headers).json().get("data") or []
+        assert all(todo.get("task") != "Da eliminare" for todo in remaining)
 
 
 class TestBudgetEndpoints:

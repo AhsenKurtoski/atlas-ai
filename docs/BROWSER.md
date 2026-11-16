@@ -145,12 +145,12 @@ cd backend
 python -m playwright install chromium
 pytest tests/test_browser.py -v
 pytest tests/test_ai_loop.py -v
-pytest -q                      # suite completa: 146 test
+pytest -q                      # suite completa: 163 test
 ```
 
 Copertura di `tests/test_browser.py`:
 
-- registry con 45 tool e 8 tool browser;
+- registry con 50 tool e 10 tool browser;
 - apertura pagina e lettura di titolo/testo/link/campi;
 - compilazione per label e click su bottone con aggiornamento JavaScript;
 - select, scroll e contenuti caricati dinamicamente;

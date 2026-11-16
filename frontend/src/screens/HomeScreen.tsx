@@ -3,7 +3,7 @@ import { View, Text, ScrollView, SafeAreaView, TouchableOpacity, RefreshControl 
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from '@react-navigation/native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
-import apiService, { DashboardData } from '../services/api';
+import apiService, { DashboardData, ReminderRow } from '../services/api';
 import CONFIG from '../config';
 import { useAuth } from '../../App';
 
@@ -34,6 +34,7 @@ export default function HomeScreen({ route, navigation }: any) {
   const [health, setHealth] = useState<HealthInfo>({ ok: false });
   const [dashboard, setDashboard] = useState<DashboardData>(EMPTY_DASHBOARD);
   const [todoPreview, setTodoPreview] = useState<string>('');
+  const [nextReminder, setNextReminder] = useState<ReminderRow | null>(null);
   const [lastError, setLastError] = useState<string>('');
 
   const fetchData = useCallback(async () => {
@@ -79,6 +80,13 @@ export default function HomeScreen({ route, navigation }: any) {
     } catch {
       setTodoPreview('');
     }
+
+    try {
+      const remindersResult = await apiService.getReminders();
+      setNextReminder((remindersResult.data ?? [])[0] ?? null);
+    } catch {
+      setNextReminder(null);
+    }
   }, []);
 
   // Aggiorna i numeri al primo accesso e quando si torna sulla tab Home.
@@ -92,6 +100,12 @@ export default function HomeScreen({ route, navigation }: any) {
     setRefreshing(true);
     await fetchData();
     setRefreshing(false);
+  };
+
+  const openList = () => {
+    const parent = navigation?.getParent?.();
+    if (parent) parent.navigate('ListaSpesa');
+    else navigation.navigate('ListaSpesa');
   };
 
   const stato = health.ok ? '🟢 Sistema online' : '🔴 Backend non collegato';
@@ -129,7 +143,7 @@ export default function HomeScreen({ route, navigation }: any) {
           <Text className="text-white/60 text-xs uppercase font-bold tracking-widest">Versione Build</Text>
           <Text className="text-white text-2xl font-bold mt-2">
             {health.ok
-              ? `v${health.versione ?? '3.1.0'} · ${health.ambiente ?? 'development'}`
+              ? `v${health.versione ?? '3.2.0'} · ${health.ambiente ?? 'development'}`
               : 'Sistema offline'}
           </Text>
           <View className="flex-row mt-3 flex-wrap">
@@ -169,8 +183,38 @@ export default function HomeScreen({ route, navigation }: any) {
           <Text className="text-[#fca5a5] mt-1">
             {dashboard.todos_pendenti} da fare · €{dashboard.spesa_mese.toFixed(2)} spesi questo mese
           </Text>
-          <Text className="text-[#fca5a5] mt-1">Vai alla Chat per aggiungere task</Text>
+          <TouchableOpacity
+            onPress={openList}
+            className="bg-[#ffffff10] p-3 rounded-xl items-center mt-4"
+          >
+            <Text className="text-white font-bold">Apri lista · aggiungi o completa</Text>
+          </TouchableOpacity>
         </Animated.View>
+
+        {nextReminder ? (
+          <View className="bg-[#1e1b4b] p-6 rounded-[32px] mb-4 border border-[#7c3aed40]">
+            <Text className="text-white/60 text-xs uppercase font-bold tracking-widest">Prossimo promemoria</Text>
+            <Text className="text-white text-lg font-bold mt-2">⏰ {nextReminder.message}</Text>
+            <Text className="text-[#a5b4fc] mt-1">
+              {new Date(nextReminder.remind_at).toLocaleString('it-IT', {
+                weekday: 'short',
+                day: '2-digit',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </Text>
+            {nextReminder.include_todos && nextReminder.lista?.length ? (
+              <Text className="text-[#fca5a5] mt-2">
+                🛒 {nextReminder.lista.slice(0, 12).join(', ')}
+                {nextReminder.lista.length > 12 ? '…' : ''}
+              </Text>
+            ) : null}
+            <TouchableOpacity onPress={() => navigation.navigate('Impostazioni')} className="mt-3">
+              <Text className="text-[#c4b5fd] font-bold">Gestisci promemoria →</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         <Text className="text-white font-bold text-xl mb-4 mt-2">Azioni Rapide</Text>
         <View className="flex-row flex-wrap justify-between">
@@ -178,11 +222,15 @@ export default function HomeScreen({ route, navigation }: any) {
             { icon: '💰', title: 'Budget', screen: 'Budget', color: 'border-[#22c55e40]' },
             { icon: '🇮🇹', title: 'Italiano', screen: 'Italiano', color: 'border-[#7c3aed40]' },
             { icon: '💬', title: 'Chat AI', screen: 'Chat', color: 'border-[#06b6d440]' },
+            { icon: '🛒', title: 'Lista', screen: 'ListaSpesa', color: 'border-[#ef444440]' },
             { icon: '⚙️', title: 'Impostazioni', screen: 'Impostazioni', color: 'border-[#f59e0b40]' },
           ].map((item, i) => (
             <TouchableOpacity
               key={i}
-              onPress={() => navigation.navigate(item.screen)}
+              onPress={() => {
+                if (item.screen === 'ListaSpesa') openList();
+                else navigation.navigate(item.screen);
+              }}
               className={`bg-[#ffffff08] w-[48%] p-5 rounded-2xl items-center mb-3 border ${item.color}`}
             >
               <Text className="text-3xl mb-2">{item.icon}</Text>

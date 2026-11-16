@@ -56,6 +56,16 @@ export interface TodoRow {
   created?: string | null;
 }
 
+export interface ReminderRow {
+  id: string;
+  message: string;
+  remind_at: string;
+  include_todos: boolean;
+  status: string;
+  local_scheduled: boolean;
+  lista: string[];
+}
+
 export interface BudgetData {
   totale: number;
   dettaglio: Array<{ categoria: string; importo: number; percentuale?: number }>;
@@ -309,6 +319,23 @@ class ApiService {
 
   async completeTodoByIndex(index: number): Promise<GenericResult> {
     return this._request('POST', `/todos/${index}/completa`, {});
+  }
+
+  async deleteTodoByIndex(index: number): Promise<GenericResult> {
+    return this._request('DELETE', `/todos/${index}`);
+  }
+
+  // ---------------- Promemoria ----------------
+  async getReminders(): Promise<GenericResult<ReminderRow[]>> {
+    return this._request('GET', '/promemoria');
+  }
+
+  async cancelReminder(reminderId: string): Promise<GenericResult> {
+    return this._request('DELETE', `/promemoria/${encodeURIComponent(reminderId)}`);
+  }
+
+  async markReminderLocalScheduled(reminderId: string): Promise<GenericResult> {
+    return this._request('POST', `/promemoria/${encodeURIComponent(reminderId)}/programmato`, {});
   }
 
   async getBudget(): Promise<GenericResult<BudgetData>> {

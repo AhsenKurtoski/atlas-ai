@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Text, View } from 'react-native';
 import { NativeWindStyleSheet } from 'nativewind';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import ProfileScreen from './src/screens/ProfileScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import ChatScreen from './src/screens/ChatScreen';
+import ListaSpesaScreen from './src/screens/ListaSpesaScreen';
 import ItalianoScreen from './src/screens/ItalianoScreen';
 import BudgetScreen from './src/screens/BudgetScreen';
 import IntegrationsScreen from './src/screens/IntegrationsScreen';
@@ -16,9 +17,11 @@ import apiService, { ApiError } from './src/services/api';
 import {
   configureNotifications,
   registerPushToken,
-  syncLocalReminders,
+  syncLocalRemindersFromSettings,
+  syncUpcomingReminders,
   unregisterPushToken,
   cancelLocalReminders,
+  cancelUpcomingReminderNotifications,
 } from './src/services/notifications';
 
 // Expo web non carica il foglio CSS generato da NativeWind: usa gli stili
@@ -195,6 +198,11 @@ export default function App() {
             livello_italiano: 'B1',
           }
         );
+        // Sessione ripristinata: riallinea subito notifiche e promemoria,
+        // senza aspettare che l'utente apra la chat.
+        registerPushToken(storedProfile).catch(() => {});
+        syncLocalRemindersFromSettings().catch(() => {});
+        syncUpcomingReminders().catch(() => {});
       } catch (error) {
         // Token non più valido: puliamo la sessione salvata e mostriamo i profili.
         if (error instanceof ApiError && error.status === 401) {
@@ -216,20 +224,24 @@ export default function App() {
     if (info) {
       await AsyncStorage.setItem(CONFIG.STORAGE_PROFILE_INFO_KEY, JSON.stringify(info));
     }
-    // Notifiche: push remote (se configurate) + promemoria locali sempre attivi.
+    // Notifiche: push remote (se configurate) + promemoria locali secondo le impostazioni.
     registerPushToken(slug).catch(() => {});
-    syncLocalReminders(true).catch(() => {});
+    syncLocalRemindersFromSettings().catch(() => {});
+    syncUpcomingReminders().catch(() => {});
   };
 
   const setAuth = useCallback(async (token: string | null, slug: string | null) => {
-    setAuthToken(token);
-    setProfileId(slug);
     const tasks: Promise<unknown>[] = [];
     if (token) tasks.push(AsyncStorage.setItem(CONFIG.STORAGE_AUTH_TOKEN_KEY, token));
     else tasks.push(AsyncStorage.removeItem(CONFIG.STORAGE_AUTH_TOKEN_KEY));
     if (slug) tasks.push(AsyncStorage.setItem(CONFIG.STORAGE_PROFILE_KEY, slug));
     else tasks.push(AsyncStorage.removeItem(CONFIG.STORAGE_PROFILE_KEY));
     await Promise.all(tasks);
+
+    // Aggiorna lo stato solo dopo aver salvato il token: la Home monta subito
+    // e le sue richieste devono trovarlo già in AsyncStorage.
+    setAuthToken(token);
+    setProfileId(slug);
 
     if (token && slug) {
       await persistProfile(slug, token);
@@ -246,6 +258,7 @@ export default function App() {
     }
     await unregisterPushToken();
     await cancelLocalReminders();
+    await cancelUpcomingReminderNotifications();
 
     setAuthToken(null);
     setProfileId(null);
@@ -265,6 +278,17 @@ export default function App() {
     return () => apiService.setUnauthorizedHandler(null);
   }, [clearAuth]);
 
+  // Al ritorno in foreground riallineiamo i promemoria: se uno è stato creato
+  // da un altro dispositivo o è cambiata la lista, il telefono si aggiorna.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && authToken) {
+        syncUpcomingReminders().catch(() => {});
+      }
+    });
+    return () => subscription.remove();
+  }, [authToken]);
+
   const authenticated = Boolean(authToken && profileId);
 
   return (
@@ -280,7 +304,10 @@ export default function App() {
         ) : (
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             {authenticated ? (
-              <Stack.Screen name="Main" component={MainTabs} />
+              <>
+                <Stack.Screen name="Main" component={MainTabs} />
+                <Stack.Screen name="ListaSpesa" component={ListaSpesaScreen} />
+              </>
             ) : (
               <Stack.Screen name="Profile" component={ProfileScreen} />
             )}

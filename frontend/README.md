@@ -95,8 +95,9 @@ EXPO_PUBLIC_API_URL=http://192.168.1.50:8010 npx expo start
 
 ## 🔔 Notifiche
 
-- **Locali**: promemoria giornalieri pianificati con `expo-notifications`
-  (lezione 7:30, acqua 10:00/15:00/19:00). Funzionano senza backend.
+- **Locali**: promemoria giornalieri e promemoria personali creati in chat,
+  pianificati con `expo-notifications` sul dispositivo (funzionano ad app chiusa,
+  senza EAS/FCM).
 - **Remote push**: all'accesso l'app richiede il permesso e registra il token Expo
   sul backend. Serve un `projectId` EAS in `app.json`:
 
