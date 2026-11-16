@@ -14,6 +14,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from '@react-navigation/native';
 import apiService, { TodoRow } from '../services/api';
+import { syncUpcomingReminders } from '../services/notifications';
 
 // Alert.alert su React Native Web ignora i pulsanti: senza questo fallback le
 // azioni distruttive (elimina/svuota) resterebbero bloccate nel browser.
@@ -71,6 +72,9 @@ export default function ListaSpesaScreen({ navigation }: any) {
       await apiService.addTodo(value);
       setTask('');
       await load();
+      // La lista è allegata ai promemoria spesa: aggiorna subito la notifica
+      // locale così il telefono mostra le cose appena aggiunte.
+      await syncUpcomingReminders();
     } catch (err: any) {
       Alert.alert('Non aggiunto', err?.message ?? 'Riprova tra poco.');
     } finally {
@@ -84,6 +88,7 @@ export default function ListaSpesaScreen({ navigation }: any) {
     try {
       await apiService.completeTodoByIndex(index);
       await load();
+      await syncUpcomingReminders();
     } catch (err: any) {
       Alert.alert('Non completato', err?.message ?? 'Riprova tra poco.');
     }
@@ -100,6 +105,7 @@ export default function ListaSpesaScreen({ navigation }: any) {
     try {
       await apiService.deleteTodoByIndex(index);
       await load();
+      await syncUpcomingReminders();
     } catch (err: any) {
       Alert.alert('Non eliminato', err?.message ?? 'Riprova tra poco.');
     }
@@ -124,6 +130,7 @@ export default function ListaSpesaScreen({ navigation }: any) {
         await apiService.deleteTodoByIndex(index);
       }
       await load();
+      await syncUpcomingReminders();
     } catch (err: any) {
       Alert.alert('Pulizia non completata', err?.message ?? 'Riprova tra poco.');
     }

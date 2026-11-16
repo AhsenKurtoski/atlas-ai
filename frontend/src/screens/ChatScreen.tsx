@@ -240,7 +240,8 @@ export default function ChatScreen({ route }: any) {
           ts: Date.now(),
         },
       ]);
-      const reminderCreated = /promemoria impostato|promemoria creato/i.test(reply);
+      const reminderCreated =
+        /promemoria (impostato|creato|salvato)|(impostato|creato|salvato).{0,40}promemoria/i.test(reply);
       const sync = await syncUpcomingReminders();
       if (reminderCreated && (!sync.ok || sync.scheduled === 0)) {
         setMessages((previous) => [
