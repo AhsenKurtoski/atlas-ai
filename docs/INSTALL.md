@@ -14,7 +14,7 @@ conoscere Xcode o EAS.
 
 | Dispositivo | Cosa scaricare | Tempo |
 |---|---|---|
-| **Android (telefono o tablet)** | [APK ATLAS AI](https://github.com/AhsenKurtoski/atlas-ai/releases/latest) | 1 minuto |
+| **Android (telefono o tablet)** | [APK ATLAS AI](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.1.0/ATLAS-AI-android.apk) | 1 minuto |
 | **iPhone / iPad** | TestFlight o build firmata (vedi sotto) | 10 minuti + account Apple |
 | **Mac (simulatore iPhone/iPad)** | Xcode + `npx expo run:ios` | 15 minuti, gratis |
 | **Sviluppo su telefono** | Expo Go / development build | 2 minuti |
@@ -34,8 +34,9 @@ una build di sviluppo) e devi ricompilare con `EXPO_PUBLIC_API_URL` corretto.
 
 ### Telefono o tablet Android
 
-1. Apri dal dispositivo il link della release:
-   **[github.com/AhsenKurtoski/atlas-ai/releases/latest](https://github.com/AhsenKurtoski/atlas-ai/releases/latest)**
+1. Apri dal dispositivo il link diretto:
+   **[ATLAS-AI-android.apk](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.1.0/ATLAS-AI-android.apk)**
+   (oppure la [pagina della release](https://github.com/AhsenKurtoski/atlas-ai/releases/tag/android-v3.1.0)).
 2. Tocca **ATLAS-AI-android.apk** (circa 156 MB).
 3. Se Chrome chiede il permesso, scegli **Imposta** → **Consenti da questa fonte**.
    Su Android 13+ il percorso può essere **Installa app sconosciute**.

@@ -23,7 +23,7 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 
 | Dispositivo | Come |
 |---|---|
-| **Android (telefono/tablet)** | Scarica l'[APK installabile](https://github.com/AhsenKurtoski/atlas-ai/releases/latest), apri il file e consenti l'installazione da browser. |
+| **Android (telefono/tablet)** | Scarica l'[APK installabile](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.1.0/ATLAS-AI-android.apk), apri il file e consenti l'installazione da browser. |
 | **iPhone / iPad** | TestFlight/App Store (Apple Developer) oppure firma gratuita con Mac + Apple ID. |
 | **Tablet** | Stessa app: layout responsive a due colonne, nessuna build separata. |
 | **Sviluppo** | Backend + `npx expo start`; dettagli sotto. |
