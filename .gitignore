@@ -81,6 +81,8 @@ backend/logs/
 Thumbs.db
 
 # ====== Test / Coverage ======
+frontend/test-results/
+frontend/playwright-report/
 htmlcov/
 .coverage
 .coverage.*

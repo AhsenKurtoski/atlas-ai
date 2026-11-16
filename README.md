@@ -9,6 +9,11 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 
 **Licenza MIT** · CI su GitHub Actions · 163 test backend · TypeScript strict a 0 errori
 
+[![CI](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ci.yml)
+[![E2E](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml)
+[![iOS Build](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ios-build.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ios-build.yml)
+[![Android APK](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/android-apk.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/android-apk.yml)
+
 <p align="center">
   <a href="media/atlas-ai-demo.mp4"><img src="media/atlas-ai-poster.jpg" width="250" alt="Guarda il video demo di ATLAS AI"></a>
   <a href="screenshots/01-home.png"><img src="screenshots/01-home.png" width="250" alt="Home di ATLAS AI"></a>
@@ -25,7 +30,7 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 |---|---|
 | **Android (telefono/tablet)** | Scarica l'[APK installabile](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.2.0/ATLAS-AI-android.apk), apri il file e consenti l'installazione da browser. |
 | **iPhone / iPad** | TestFlight/App Store (Apple Developer) oppure firma gratuita con Mac + Apple ID. |
-| **Tablet** | Stessa app: layout responsive a due colonne, nessuna build separata. |
+| **Tablet** | Stessa app: layout responsive a due colonne, rotazione portrait/landscape, nessuna build separata. |
 | **Sviluppo** | Backend + `npx expo start`; dettagli sotto. |
 
 La guida passo-passo, i limiti della firma iOS e la risoluzione dei problemi sono in
@@ -149,6 +154,8 @@ eas build --profile development --platform android
 | `npm run android` | Emulatore/dispositivo Android |
 | `npm run ios` | Simulatore iOS (solo macOS) |
 | `npm run typecheck` | `tsc --noEmit` (strict, 0 errori) |
+| `npm run export:web` | Export statico web in `dist/` |
+| `npm run test:e2e` | Playwright: login + lista spesa (backend su `:8010`) |
 
 ---
 
@@ -258,7 +265,12 @@ lo dice e spiega come attivarlo.
 ```bash
 cd backend && pytest -q          # 163 test (browser Chromium reale + 2 loop Gemini finto)
 cd frontend && npm run typecheck  # 0 errori (strict)
+cd frontend && npm run test:e2e   # login + lista spesa nel browser (backend su :8010)
 ```
+
+La CI esegue anche la build iOS per simulatore su macOS, installa e avvia
+l'APK Android su un emulatore reale prima di pubblicare la release, e lancia
+i test Playwright su ogni push.
 
 | Suite backend | Copre |
 |---|---|
@@ -319,7 +331,7 @@ atlas-ai/
 - **Licenza**: [MIT](LICENSE) — puoi usare, modificare e distribuire il progetto.
 - **Contributi**: leggi [CONTRIBUTING.md](CONTRIBUTING.md) (setup, test obbligatori, regole).
 - **Sicurezza**: segnalazioni private secondo [SECURITY.md](SECURITY.md); non aprire issue pubbliche per le vulnerabilità.
-- **CI**: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) esegue `pytest` e `tsc --noEmit` su ogni push/PR.
+- **CI**: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) esegue `pytest` e `tsc --noEmit`; [`e2e.yml`](.github/workflows/e2e.yml) esegue gli smoke test Playwright; [`ios-build.yml`](.github/workflows/ios-build.yml) compila l'app iOS per simulatore.
 - **Nessun segreto nel repo**: `.env` e `_local_db/` sono ignorati; usa `.env.example` come modello.
 - **Agente browser**: architettura, tool e limiti in [`docs/BROWSER.md`](docs/BROWSER.md).
 - **Guida di test passo-passo**: [`docs/TESTING_GUIDE.md`](docs/TESTING_GUIDE.md).

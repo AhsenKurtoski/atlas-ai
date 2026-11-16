@@ -1,0 +1,74 @@
+name: iOS Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/ios-build.yml"
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/ios-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios-simulator:
+    name: Build iOS simulator app
+    runs-on: macos-14
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      CI: "1"
+      EXPO_PUBLIC_API_URL: "https://atlas-ai.tailf30c71.ts.net"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Installa dipendenze
+        run: npm ci
+
+      - name: Genera il progetto iOS
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Installa CocoaPods
+        working-directory: frontend/ios
+        run: pod install --repo-update
+
+      - name: Compila per iPhone e iPad Simulator
+        working-directory: frontend/ios
+        run: |
+          set -euo pipefail
+          WORKSPACE=$(find . -maxdepth 1 -name '*.xcworkspace' | head -n 1)
+          test -n "$WORKSPACE"
+          SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" -json | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("workspace") or {}).get("schemes", [""])[0])')
+          test -n "$SCHEME"
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          APP=$(find build/Build/Products/Debug-iphonesimulator -maxdepth 1 -name '*.app' | head -n 1)
+          test -n "$APP"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" ../ATLAS-AI-ios-simulator.zip
+
+      - name: Carica app iOS simulator
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATLAS-AI-ios-simulator
+          path: frontend/ATLAS-AI-ios-simulator.zip
+          if-no-files-found: error

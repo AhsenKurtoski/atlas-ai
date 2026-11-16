@@ -3,7 +3,7 @@
     "name": "ATLAS AI",
     "slug": "atlas-ai",
     "version": "3.2.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "scheme": "atlasai",

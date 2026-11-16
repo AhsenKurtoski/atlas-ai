@@ -219,9 +219,11 @@ cd frontend && npx expo export --platform ios
 ## 📱 Tablet e iPad
 
 - **iPad**: `supportsTablet: true` è già in `frontend/app.json`; l'app usa card a due
-  colonne e testi leggibili. L'esperienza è ottimizzata per l'uso verticale, come gli
-  screenshot inclusi.
-- **Tablet Android**: stessa APK del telefono; il layout usa la larghezza disponibile.
+  colonne e testi leggibili. L'app parte in verticale ma ora supporta anche la
+  rotazione in **landscape**, quindi tablet e iPad possono essere usati in entrambi
+  gli orientamenti.
+- **Tablet Android**: stessa APK del telefono; layout responsivo e rotazione
+  supportata anche in landscape.
 - **Test consigliato**: apri Home, Chat, Italiano e Budget su un iPad o tablet;
   controlla che il contenuto non venga tagliato e che il tab bar resti raggiungibile.
 - **Screenshot tablet**: [`screenshots/07-tablet-login.png`](../screenshots/07-tablet-login.png).

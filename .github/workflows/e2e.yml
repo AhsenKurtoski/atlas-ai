@@ -1,0 +1,79 @@
+name: E2E
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  web-smoke:
+    name: Web smoke (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Installa backend
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Avvia backend
+        working-directory: backend
+        env:
+          APP_ENV: test
+          SCHEDULER_ENABLED: "false"
+        run: |
+          nohup python -m uvicorn main:app --host 127.0.0.1 --port 8010 > /tmp/atlas-e2e-backend.log 2>&1 &
+          echo $! > /tmp/atlas-e2e-backend.pid
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8010/ > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/atlas-e2e-backend.log
+          exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Installa frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: Installa Chromium per Playwright
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Esporta la build web
+        working-directory: frontend
+        env:
+          EXPO_PUBLIC_API_URL: "http://127.0.0.1:8010"
+        run: npm run export:web
+
+      - name: Esegui smoke test
+        working-directory: frontend
+        env:
+          E2E_API_URL: "http://127.0.0.1:8010"
+        run: npm run test:e2e
+
+      - name: Carica risultati in caso di errore
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atlas-e2e-results
+          path: frontend/test-results
+          if-no-files-found: warn

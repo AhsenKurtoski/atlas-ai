@@ -349,10 +349,13 @@ Dopo ogni push su `main`, apri:
 
 <https://github.com/AhsenKurtoski/atlas-ai/actions>
 
-Devono essere verdi entrambi i job:
+Devono essere verdi tutti i workflow:
 
-- **Backend (pytest, Python 3.12)** — installa Chromium e esegue 163 test;
-- **Frontend (TypeScript)** — `npm ci` + `tsc --noEmit`.
+- **CI / Backend (pytest, Python 3.12)** — installa Chromium e esegue 163 test;
+- **CI / Frontend (TypeScript)** — `npm ci` + `tsc --noEmit`;
+- **E2E / Web smoke** — avvia FastAPI, esporta il web e verifica login + lista nel browser;
+- **iOS Build** — genera il progetto iOS e compila l'app per il simulatore su macOS;
+- **Android APK** — compila l'APK, lo installa e lo avvia su un emulatore Android, poi pubblica la release.
 
 Se il job backend fallisce, apri il log del passo “Test” e cerca il primo `FAILED`:
 non ignorare un test rosso. Se fallisce l'installazione di Chromium, verifica
@@ -383,6 +386,8 @@ non ignorare un test rosso. Se fallisce l'installazione di Chromium, verifica
 - [ ] `pytest tests/test_browser.py -v` → 18 passed
 - [ ] `pytest tests/test_ai_loop.py -v` → 2 passed
 - [ ] `npx tsc --noEmit` → 0 errori
+- [ ] `npm run export:web` → export completato
+- [ ] `npm run test:e2e` → 1 passed (backend su :8010)
 - [ ] `curl.exe http://localhost:8010/` → `status: ok`
 - [ ] login `io` / `0000`
 - [ ] chat testo con Gemini
