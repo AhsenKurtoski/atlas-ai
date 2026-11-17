@@ -65,13 +65,15 @@ jobs:
             -configuration Debug \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
+            ONLY_ACTIVE_ARCH=YES \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee /tmp/atlas-ios-build.log
           BUILD_STATUS=${PIPESTATUS[0]}
           if [ "$BUILD_STATUS" -ne 0 ]; then
             grep -E 'error:|BUILD FAILED|The following build commands failed' /tmp/atlas-ios-build.log | tail -20 || true
-            echo "::error::iOS build fallita (exit $BUILD_STATUS); vedi ios-build.log nell'artifact"
+            ERROR_SUMMARY=$(grep -E 'error:|BUILD FAILED|The following build commands failed' /tmp/atlas-ios-build.log | tail -12 | tr '\n' ' ' | cut -c1-2500 || true)
+            echo "::error::iOS build fallita (exit $BUILD_STATUS): ${ERROR_SUMMARY:-nessun errore estratto}"
             exit "$BUILD_STATUS"
           fi
           APP=$(find build/Build/Products/Debug-iphonesimulator -maxdepth 1 -name '*.app' | head -n 1)

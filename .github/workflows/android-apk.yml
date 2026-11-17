@@ -67,6 +67,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      - uses: actions/checkout@v4
+
       - name: Scarica APK
         uses: actions/download-artifact@v4
         with:
@@ -88,72 +90,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: |
-            set -u
-            adb wait-for-device
-            for attempt in $(seq 1 60); do
-              BOOTED=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
-              if [ "$BOOTED" = "1" ]; then
-                echo "Emulatore avviato dopo $((attempt * 2))s"
-                break
-              fi
-              sleep 2
-            done
-            adb logcat -c
-            adb shell input keyevent 82 || true
-            echo "APK: $(ls -lh ATLAS-AI-android.apk)"
-            adb devices
-            adb shell getprop ro.product.cpu.abi || true
-            adb shell getprop ro.build.version.sdk || true
-            adb shell df -h /data || true
-            INSTALL_STATUS=0
-            for attempt in 1 2 3; do
-              adb install -r ATLAS-AI-android.apk > /tmp/atlas-install.log 2>&1 && {
-                INSTALL_STATUS=0
-                break
-              }
-              INSTALL_STATUS=$?
-              echo "Tentativo installazione $attempt fallito (exit $INSTALL_STATUS)"
-              cat /tmp/atlas-install.log
-              sleep 5
-            done
-            cat /tmp/atlas-install.log
-            if [ "$INSTALL_STATUS" -ne 0 ]; then
-              echo "::error::adb install fallito (exit $INSTALL_STATUS): $(tail -c 1200 /tmp/atlas-install.log | tr '\n' ' ')"
-              adb logcat -d -v brief > android-logcat.txt || true
-              adb shell dumpsys package com.atlasai.family > android-package.txt 2>&1 || true
-              adb exec-out screencap -p > atlas-install.png || true
-              exit 1
-            fi
-            adb shell am force-stop com.atlasai.family
-            adb shell am start -W -n com.atlasai.family/.MainActivity || true
-            sleep 15
-            PID=$(adb shell pidof com.atlasai.family | tr -d '\r')
-            echo "Processo ATLAS: '$PID'"
-            adb logcat -d -v brief > android-logcat.txt || true
-            if [ -z "$PID" ]; then
-              tail -120 android-logcat.txt
-              echo "::error::Il processo ATLAS non è attivo dopo il lancio"
-              adb shell dumpsys package com.atlasai.family > android-package.txt 2>&1 || true
-              adb exec-out screencap -p > atlas-install.png || true
-              exit 1
-            fi
-            adb shell uiautomator dump /sdcard/atlas-window.xml || true
-            adb pull /sdcard/atlas-window.xml atlas-window.xml || true
-            if [ -s atlas-window.xml ] && ! grep -Eq 'ATLAS AI|Chi sei|Inserisci PIN' atlas-window.xml; then
-              tail -120 android-logcat.txt
-              echo '::error::La UI ATLAS non è comparsa nel dump uiautomator'
-              adb exec-out screencap -p > atlas-install.png || true
-              exit 1
-            fi
-            if adb logcat -d -v brief | grep -q 'FATAL EXCEPTION'; then
-              echo '::error::Crash Android rilevato nel logcat'
-              adb logcat -d -v brief | grep -A 20 'FATAL EXCEPTION' || true
-              adb exec-out screencap -p > atlas-install.png || true
-              exit 1
-            fi
-            echo "::notice::APK installato e avviato, processo $PID"
-            adb exec-out screencap -p > atlas-install.png
+          script: bash frontend/scripts/android-smoke.sh
 
       - name: Carica screenshot installazione
         if: always()
