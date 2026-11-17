@@ -76,6 +76,7 @@ from app.core.schemas import (
     MeResponse,
     PinAuthRequest,
     PinAuthResponse,
+    PdfRequest,
     ProfileSummary,
     PushRegisterRequest,
     PushTestRequest,
@@ -97,6 +98,7 @@ from app.core.security import (
 from app.core.settings import cors_origins, is_production, scheduler_enabled
 from app.notifiche import invia_a_profilo
 from app.services.browser import browser_profile, shutdown_browser
+from app.services.pdf import build_pdf
 from app.scheduler import (
     automazioni_totali,
     get_jobs,
@@ -581,6 +583,33 @@ def aggiungi_spesa(
     return GenericResponse(
         status="ok",
         message=esito if isinstance(esito, str) and esito != "ok" else "Spesa registrata.",
+    )
+
+
+# ---------------- Documenti PDF ----------------
+@app.post("/documenti/pdf", response_model=GenericResponse)
+@limiter.limit("10/minute")
+def genera_documento_pdf(
+    request: Request,
+    payload: PdfRequest,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    """Genera un PDF A4 reale e lo restituisce in base64 per il download/share."""
+    try:
+        pdf = build_pdf(payload.titolo, payload.contenuto)
+    except ValueError as exc:
+        return GenericResponse(status="error", message=str(exc))
+    filename = f"ATLAS-{slug}-{int(time.time())}.pdf"
+    log.info("PDF generato da %s: %s (%d byte)", slug, filename, len(pdf))
+    return GenericResponse(
+        status="ok",
+        message="PDF generato.",
+        data={
+            "filename": filename,
+            "mime_type": "application/pdf",
+            "size": len(pdf),
+            "base64": base64.b64encode(pdf).decode("ascii"),
+        },
     )
 
 

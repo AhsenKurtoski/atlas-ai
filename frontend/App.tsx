@@ -12,6 +12,7 @@ import ListaSpesaScreen from './src/screens/ListaSpesaScreen';
 import ItalianoScreen from './src/screens/ItalianoScreen';
 import BudgetScreen from './src/screens/BudgetScreen';
 import IntegrationsScreen from './src/screens/IntegrationsScreen';
+import PdfScreen from './src/screens/PdfScreen';
 import CONFIG from './src/config';
 import apiService, { ApiError } from './src/services/api';
 import {
@@ -307,6 +308,7 @@ export default function App() {
               <>
                 <Stack.Screen name="Main" component={MainTabs} />
                 <Stack.Screen name="ListaSpesa" component={ListaSpesaScreen} />
+                <Stack.Screen name="DocumentoPdf" component={PdfScreen} />
               </>
             ) : (
               <Stack.Screen name="Profile" component={ProfileScreen} />

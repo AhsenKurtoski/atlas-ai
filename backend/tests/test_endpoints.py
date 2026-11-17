@@ -192,6 +192,37 @@ class TestBudgetEndpoints:
         assert response.status_code == 422
 
 
+class TestPdfDocuments:
+    def test_genera_pdf_valido(self, client, auth_headers):
+        response = client.post(
+            "/documenti/pdf",
+            json={"titolo": "Riepilogo famiglia", "contenuto": "Ciao ATLAS.\n\nBudget e lista spesa."},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["status"] == "ok"
+        data = body["data"]
+        assert data["mime_type"] == "application/pdf"
+        assert data["filename"].endswith(".pdf")
+        pdf = base64.b64decode(data["base64"])
+        assert pdf.startswith(b"%PDF-1.4")
+        assert pdf.rstrip().endswith(b"%%EOF")
+        assert len(pdf) == data["size"]
+
+    def test_pdf_senza_token_401(self, client):
+        response = client.post("/documenti/pdf", json={"titolo": "x", "contenuto": "y"})
+        assert response.status_code == 401
+
+    def test_pdf_vuoto_422(self, client, auth_headers):
+        response = client.post(
+            "/documenti/pdf",
+            json={"titolo": "   ", "contenuto": "testo"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+
+
 class TestDashboard:
     def test_dashboard_reale(self, client, auth_headers):
         response = client.get("/dashboard", headers=auth_headers)

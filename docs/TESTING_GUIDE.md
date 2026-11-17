@@ -73,7 +73,7 @@ cd backend
 Risultato atteso:
 
 ```text
-163 passed
+166 passed
 ```
 
 Test mirati:
@@ -351,9 +351,9 @@ Dopo ogni push su `main`, apri:
 
 Devono essere verdi tutti i workflow:
 
-- **CI / Backend (pytest, Python 3.12)** — installa Chromium e esegue 163 test;
+- **CI / Backend (pytest, Python 3.12)** — installa Chromium e esegue 166 test;
 - **CI / Frontend (TypeScript)** — `npm ci` + `tsc --noEmit`;
-- **E2E / Web smoke** — avvia FastAPI, esporta il web e verifica login + lista nel browser;
+- **E2E / Web smoke** — avvia FastAPI, esporta il web e verifica login, lista spesa e generazione PDF nel browser;
 - **iOS Build** — genera il progetto iOS e compila l'app per il simulatore su macOS;
 - **Android APK** — compila l'APK, lo installa e lo avvia su un emulatore Android, poi pubblica la release.
 
@@ -382,7 +382,7 @@ non ignorare un test rosso. Se fallisce l'installazione di Chromium, verifica
 
 ## 15. Checklist finale
 
-- [ ] `pytest -q` → 163 passed
+- [ ] `pytest -q` → 166 passed
 - [ ] `pytest tests/test_browser.py -v` → 18 passed
 - [ ] `pytest tests/test_ai_loop.py -v` → 2 passed
 - [ ] `npx tsc --noEmit` → 0 errori

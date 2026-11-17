@@ -145,7 +145,7 @@ cd backend
 python -m playwright install chromium
 pytest tests/test_browser.py -v
 pytest tests/test_ai_loop.py -v
-pytest -q                      # suite completa: 163 test
+pytest -q                      # suite completa: 166 test
 ```
 
 Copertura di `tests/test_browser.py`:

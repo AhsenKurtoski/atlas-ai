@@ -42,7 +42,7 @@ una build di sviluppo) e devi ricompilare con `EXPO_PUBLIC_API_URL` corretto.
    ("Ricordami verso le 4-5 di andare da Lidl"). Su Android 12+ l'app include
    anche il permesso per gli avvisi puntuali; se il sistema lo richiede,
    abilita «Sveglie e promemoria» nelle impostazioni dell'app.
-2. Tocca **ATLAS-AI-android.apk** (circa 156 MB).
+2. Tocca **ATLAS-AI-android.apk** (circa 73 MB).
 3. Se Chrome chiede il permesso, scegli **Imposta** → **Consenti da questa fonte**.
    Su Android 13+ il percorso può essere **Installa app sconosciute**.
 4. Apri il file scaricato e tocca **Installa**.
@@ -69,8 +69,8 @@ cd frontend
 npm ci
 npx expo prebuild --platform android --no-install
 cd android
-./gradlew assembleDebug
-# APK: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease
+# APK: frontend/android/app/build/outputs/apk/release/app-release.apk
 ```
 
 Per una build **distribuibile** (non debug) usa EAS:
@@ -207,7 +207,7 @@ Tailscale già configurato.
 ### 3. Verifica veloce
 
 ```bash
-cd backend && ./venv/Scripts/python.exe -m pytest -q   # 163 test
+cd backend && ./venv/Scripts/python.exe -m pytest -q   # 166 test
 cd frontend && npm run typecheck                      # 0 errori
 cd frontend && npx expo-doctor                        # 17/17 check
 cd frontend && npx expo export --platform android
@@ -237,7 +237,7 @@ cd frontend && npx expo export --platform ios
 | “Network request failed” | Backend spento o URL errato. Apri l'URL nel browser del telefono. |
 | Login rifiutato | PIN errato o backend non raggiungibile. Usa `io` / `0000` per la demo. |
 | Sessione scaduta (401) | Torna ai profili e reinserisci il PIN. |
-| Android blocca l'APK | Consenti “Installa app sconosciute” per il browser; è una build debug. |
+| Android blocca l'APK | Consenti “Installa app sconosciute” per il browser; è una release interna firmata con la chiave di debug. |
 | iPhone “Sviluppatore non verificato” | Impostazioni → Generali → VPN e gestione dispositivo → Trust. |
 | TestFlight non vede l'app | Attendi l'elaborazione Apple; verifica di essere tester del gruppo. |
 | Nessuna risposta AI | Manca una chiave Gemini nel backend (`GOOGLE_API_KEY_1`). |
@@ -252,5 +252,5 @@ cd frontend && npx expo export --platform ios
 - Non esporre il backend senza HTTPS e senza autenticazione.
 - Le API key (Gemini, Google, Supabase) restano **solo nel backend**, mai
   nell'APK né nel repository.
-- L'APK è una build **debug** pensata per test e uso personale; per il Play Store
+- L'APK è una **release interna** pensata per test e uso personale; per il Play Store
   usa il profilo `production` e una keystore dedicata.

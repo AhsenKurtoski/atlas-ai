@@ -3,11 +3,11 @@
 Assistente AI **family-first** con backend Python/FastAPI + app mobile React Native (Expo).
 
 > Pensato per famiglie italiane: chat AI multi-utente con accesso PIN, profili famiglia,
-> liste condivise, budget, automazioni pianificate con notifiche push, lezioni di italiano,
-> integrazione reale con Gmail/Calendar e server MCP, e un **agente browser Chromium**
-> che apre siti, clicca, compila moduli e legge pagine dinamiche.
+> liste condivise, budget, PDF reali, automazioni pianificate con notifiche push,
+> lezioni di italiano, integrazione reale con Gmail/Calendar e server MCP, e un
+> **agente browser Chromium** che apre siti, clicca, compila moduli e legge pagine dinamiche.
 
-**Licenza MIT** · CI su GitHub Actions · 163 test backend · TypeScript strict a 0 errori
+**Licenza MIT** · CI su GitHub Actions · 166 test backend · TypeScript strict a 0 errori
 
 [![CI](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ci.yml)
 [![E2E](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml)
@@ -28,13 +28,14 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 
 | Dispositivo | Come |
 |---|---|
-| **Android (telefono/tablet)** | Scarica l'[APK installabile](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.2.0/ATLAS-AI-android.apk), apri il file e consenti l'installazione da browser. |
-| **iPhone / iPad** | TestFlight/App Store (Apple Developer) oppure firma gratuita con Mac + Apple ID. |
+| **Android (telefono/tablet)** | Scarica l'[APK release](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.2.0/ATLAS-AI-android.apk) (~73 MB), apri il file e consenti l'installazione da browser. |
+| **iPhone / iPad** | Simulatore con Mac, firma gratuita (7 giorni) o TestFlight. Apple richiede una firma: **non esiste un'installazione iOS gratuita in 5 minuti**. |
 | **Tablet** | Stessa app: layout responsive a due colonne, rotazione portrait/landscape, nessuna build separata. |
-| **Sviluppo** | Backend + `npx expo start`; dettagli sotto. |
+| **Sviluppo** | Backend + `npx expo start`; guida rapida in [`docs/QUICKSTART.md`](docs/QUICKSTART.md). |
 
 La guida passo-passo, i limiti della firma iOS e la risoluzione dei problemi sono in
-**[docs/INSTALL.md](docs/INSTALL.md)**.
+**[docs/INSTALL.md](docs/INSTALL.md)**, **[docs/IOS.md](docs/IOS.md)** e
+**[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
 
 ---
 
@@ -244,6 +245,7 @@ dell'app come testo); le email vengono lette solo se colleghi Gmail.
 | **Promemoria intelligenti** creati in chat ("verso le 4-5 devo andare da Lidl") | ✅ reale | notifiche locali attive |
 | **Lista spesa condivisa** con aggiunta, completamento, eliminazione e pulizia | ✅ reale | — |
 | Budget per categoria + totale mese | ✅ reale | — |
+| PDF A4 con condivisione iOS/Android e download web | ✅ reale | — |
 | Dashboard con KPI reali | ✅ reale | — |
 | Notifiche locali programmate (acqua, lezione, …) | ✅ reale | — |
 | Push remote alle automazioni | ✅ reale | `extra.eas.projectId` in `app.json` |
@@ -263,7 +265,7 @@ lo dice e spiega come attivarlo.
 ## 🧪 Qualità & test
 
 ```bash
-cd backend && pytest -q          # 163 test (browser Chromium reale + 2 loop Gemini finto)
+cd backend && pytest -q          # 166 test (18 browser Chromium reali + 2 test del loop agente)
 cd frontend && npm run typecheck  # 0 errori (strict)
 cd frontend && npm run test:e2e   # login + lista spesa nel browser (backend su :8010)
 ```
@@ -313,7 +315,7 @@ atlas-ai/
 │   │   │   ├── google_oauth.py # OAuth Gmail/Calendar
 │   │   │   └── browser.py      # agente Chromium: worker, sessioni, SSRF
 │   │   └── tools/              # 50 tool (browser, family, finance, travel, utility, MCP, italiano)
-│   ├── tests/                  # 163 test
+│   ├── tests/                  # 166 test
 │   └── supabase_schema.sql
 └── frontend/
     ├── App.tsx                 # AuthContext, sessione, navigazione, notifiche
@@ -336,6 +338,9 @@ atlas-ai/
 - **Agente browser**: architettura, tool e limiti in [`docs/BROWSER.md`](docs/BROWSER.md).
 - **Guida di test passo-passo**: [`docs/TESTING_GUIDE.md`](docs/TESTING_GUIDE.md).
 - **Installazione Android/iOS/tablet**: [`docs/INSTALL.md`](docs/INSTALL.md).
+- **Percorso rapido e limiti reali**: [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
+- **iOS, iPad, firma e TestFlight**: [`docs/IOS.md`](docs/IOS.md).
+- **Matrice funzionalità e prerequisiti**: [`docs/FEATURES.md`](docs/FEATURES.md).
 - **Sempre online gratis**: [`docs/DEPLOY_FREE.md`](docs/DEPLOY_FREE.md) (Oracle Always Free + Tailscale Funnel).
 - **Media**: screenshot in [`screenshots/`](screenshots/) e video demo in [`media/atlas-ai-demo.mp4`](media/atlas-ai-demo.mp4).
 
@@ -346,3 +351,9 @@ DuckDuckGo, Google News RSS, MyMemory, Supabase free tier, OAuth Google, Amadeus
 (free tier). Nessun servizio a pagamento è richiesto.
 
 Vedi [REVIEW.md](REVIEW.md) per l'audit completo, le correzioni fatte e le raccomandazioni.
+
+---
+
+**Ti è utile?** Lascia una ⭐ al repository: aiuta altre famiglie a trovarlo e
+mantiene visibile il progetto open source. Non ci sono sponsorizzazioni né dati
+venduti a terzi.

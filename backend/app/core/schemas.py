@@ -126,6 +126,19 @@ class BudgetRiepilogo(BaseModel):
     dettaglio: list[BudgetRow] = []
 
 
+# ---------------- Documenti PDF ----------------
+class PdfRequest(BaseModel):
+    titolo: str = Field(..., min_length=1, max_length=120)
+    contenuto: str = Field(..., min_length=1, max_length=20_000)
+
+    @field_validator("titolo", "contenuto")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Il campo non può essere vuoto")
+        return value.strip()
+
+
 # ---------------- Notifiche ----------------
 class PushRegisterRequest(BaseModel):
     token: str = Field(..., min_length=8, max_length=255)

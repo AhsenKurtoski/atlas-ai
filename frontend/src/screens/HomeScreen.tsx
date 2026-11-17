@@ -223,12 +223,14 @@ export default function HomeScreen({ route, navigation }: any) {
             { icon: '🇮🇹', title: 'Italiano', screen: 'Italiano', color: 'border-[#7c3aed40]' },
             { icon: '💬', title: 'Chat AI', screen: 'Chat', color: 'border-[#06b6d440]' },
             { icon: '🛒', title: 'Lista', screen: 'ListaSpesa', color: 'border-[#ef444440]' },
+            { icon: '📄', title: 'PDF', screen: 'DocumentoPdf', color: 'border-[#a855f740]' },
             { icon: '⚙️', title: 'Impostazioni', screen: 'Impostazioni', color: 'border-[#f59e0b40]' },
           ].map((item, i) => (
             <TouchableOpacity
               key={i}
               onPress={() => {
                 if (item.screen === 'ListaSpesa') openList();
+                else if (item.screen === 'DocumentoPdf') navigation.getParent?.()?.navigate('DocumentoPdf');
                 else navigation.navigate(item.screen);
               }}
               className={`bg-[#ffffff08] w-[48%] p-5 rounded-2xl items-center mb-3 border ${item.color}`}

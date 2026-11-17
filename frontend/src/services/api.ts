@@ -71,6 +71,13 @@ export interface BudgetData {
   dettaglio: Array<{ categoria: string; importo: number; percentuale?: number }>;
 }
 
+export interface PdfDocument {
+  filename: string;
+  mime_type: string;
+  size: number;
+  base64: string;
+}
+
 export interface ProfileRow {
   nome: string;
   livello_italiano: string;
@@ -348,6 +355,16 @@ class ApiService {
     descrizione?: string;
   }): Promise<GenericResult> {
     return this._request('POST', '/budget/spesa', params);
+  }
+
+  // ---------------- Documenti PDF ----------------
+  async createPdf(titolo: string, contenuto: string): Promise<GenericResult<PdfDocument>> {
+    return this._request<GenericResult<PdfDocument>>(
+      'POST',
+      '/documenti/pdf',
+      { titolo, contenuto },
+      { timeoutMs: 30000 }
+    );
   }
 
   // ---------------- Notifiche ----------------

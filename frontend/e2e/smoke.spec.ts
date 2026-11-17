@@ -40,3 +40,20 @@ test('login, aggiunta, completamento ed eliminazione dalla lista spesa', async (
   await page.getByLabel('Elimina elemento').last().click();
   await expect(page.getByText(item, { exact: true })).toHaveCount(0);
 });
+
+test('genera un PDF reale dalla schermata documenti', async ({ page }) => {
+  await page.goto('/');
+  await page.getByText('Tu (Admin)', { exact: true }).click();
+  await page.getByPlaceholder('****').fill('0000');
+  await page.getByText(/Sblocca/).click();
+  await expect(page.getByText('BENVENUTO')).toBeVisible({ timeout: 20_000 });
+
+  await page.getByText('PDF', { exact: true }).click();
+  await expect(page.getByText('📄 Crea un PDF')).toBeVisible();
+  await page.getByPlaceholder('Es. Riepilogo spese di novembre').fill('E2E PDF');
+  await page
+    .getByPlaceholder('Scrivi qui il testo del documento…')
+    .fill('Documento generato dal test end-to-end di ATLAS AI.');
+  await page.getByText('📄 Genera PDF').click();
+  await expect(page.getByText(/Ultimo file:/)).toBeVisible({ timeout: 15_000 });
+});
