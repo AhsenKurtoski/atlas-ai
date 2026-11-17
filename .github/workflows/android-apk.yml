@@ -122,5 +122,6 @@ jobs:
           tag_name: android-v3.2.0
           name: ATLAS AI Android v3.2.0 (Tailscale Funnel)
           files: frontend/ATLAS-AI-android.apk
+          overwrite: true
           prerelease: true
           generate_release_notes: true
