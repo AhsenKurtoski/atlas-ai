@@ -55,6 +55,19 @@ adb shell am force-stop "$PACKAGE" || true
 adb shell am start -W -n "$ACTIVITY" || true
 sleep 15
 
+dump_ui() {
+  adb shell uiautomator dump /sdcard/atlas-window.xml >/dev/null 2>&1 || true
+  adb pull /sdcard/atlas-window.xml atlas-window.xml >/dev/null 2>&1 || true
+}
+
+dump_ui
+if grep -q "isn't responding" atlas-window.xml 2>/dev/null; then
+  echo "Dialogo ANR di sistema rilevato; lo chiudo"
+  adb shell input keyevent 4 || true
+  sleep 2
+  dump_ui
+fi
+
 PID="$(adb shell pidof "$PACKAGE" | tr -d '\r' || true)"
 echo "Processo ATLAS: '$PID'"
 adb logcat -d -v brief > android-logcat.txt || true
@@ -67,10 +80,18 @@ if [ -z "$PID" ]; then
   exit 1
 fi
 
-adb shell uiautomator dump /sdcard/atlas-window.xml || true
-adb pull /sdcard/atlas-window.xml atlas-window.xml || true
-if [ -s atlas-window.xml ] && ! grep -Eq 'ATLAS AI|Chi sei|Inserisci PIN|PIN' atlas-window.xml; then
-  echo "::warning::Testo UI non rilevato nel dump uiautomator; verifico processo e crash nel logcat"
+for _ in 1 2 3; do
+  if grep -Eq 'ATLAS AI|Chi sei|Inserisci PIN|PIN' atlas-window.xml 2>/dev/null; then
+    break
+  fi
+  sleep 3
+  dump_ui
+done
+if ! grep -Eq 'ATLAS AI|Chi sei|Inserisci PIN|PIN' atlas-window.xml 2>/dev/null; then
+  tail -120 android-logcat.txt || true
+  echo "::error::La UI ATLAS non è comparsa dopo il lancio"
+  adb exec-out screencap -p > atlas-install.png || true
+  exit 1
 fi
 
 if grep -q 'FATAL EXCEPTION' android-logcat.txt; then
