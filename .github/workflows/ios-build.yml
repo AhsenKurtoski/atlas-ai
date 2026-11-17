@@ -42,7 +42,13 @@ jobs:
 
       - name: Installa il runtime iOS 18.2 per Xcode 16.2
         run: |
-          sudo xcodebuild -downloadPlatform iOS -buildVersion 18.2
+          for attempt in 1 2 3; do
+            if sudo xcodebuild -downloadPlatform iOS -buildVersion 18.2; then
+              break
+            fi
+            echo "Download runtime fallito (tentativo $attempt), riprovo..."
+            sleep 10
+          done
           xcrun simctl list runtimes | grep -i 'iOS 18.2'
 
       - name: Installa dipendenze

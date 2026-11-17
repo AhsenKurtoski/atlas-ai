@@ -31,7 +31,7 @@ test('login, aggiunta, completamento ed eliminazione dalla lista spesa', async (
   await expect(page.getByText(item, { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: `Completa ${item}` }).click();
-  await expect(page.getByText('Completati')).toBeVisible();
+  await expect(page.getByText('Completati', { exact: true })).toBeVisible();
   await expect(page.getByText(item, { exact: true })).toBeVisible();
 
   page.once('dialog', async (dialog) => {
