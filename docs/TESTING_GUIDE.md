@@ -73,7 +73,7 @@ cd backend
 Risultato atteso:
 
 ```text
-166 passed
+167 passed
 ```
 
 Test mirati:
@@ -113,6 +113,7 @@ In un secondo terminale:
 
 ```powershell
 curl.exe http://localhost:8010/
+curl.exe http://localhost:8010/health   # health check leggero per i monitor
 ```
 
 Risposta attesa (valori indicativi):
@@ -351,7 +352,7 @@ Dopo ogni push su `main`, apri:
 
 Devono essere verdi tutti i workflow:
 
-- **CI / Backend (pytest, Python 3.12)** — installa Chromium e esegue 166 test;
+- **CI / Backend (pytest, Python 3.12)** — installa Chromium e esegue 167 test;
 - **CI / Frontend (TypeScript)** — `npm ci` + `tsc --noEmit`;
 - **E2E / Web smoke** — avvia FastAPI, esporta il web e verifica login, lista spesa e generazione PDF nel browser;
 - **iOS Build** — genera il progetto iOS e compila l'app per il simulatore su macOS;
@@ -382,7 +383,7 @@ non ignorare un test rosso. Se fallisce l'installazione di Chromium, verifica
 
 ## 15. Checklist finale
 
-- [ ] `pytest -q` → 166 passed
+- [ ] `pytest -q` → 167 passed
 - [ ] `pytest tests/test_browser.py -v` → 18 passed
 - [ ] `pytest tests/test_ai_loop.py -v` → 2 passed
 - [ ] `npx tsc --noEmit` → 0 errori

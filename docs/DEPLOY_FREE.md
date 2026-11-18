@@ -172,9 +172,20 @@ Aggiungi un cron giornaliero e conserva i file fuori dalla VM (per esempio in
 un bucket gratuito o sul tuo PC). Se usi Supabase, i dati sono già remoti, ma
 tieni comunque un export.
 
-**UptimeRobot** (piano gratuito) può controllare `GET /` ogni 5 minuti e
-avvisarti via email. Un monitoraggio gratuito non rende il servizio a prova di
-guasto, ma ti dice subito se la VM o il tunnel sono caduti.
+**UptimeRobot** (piano gratuito) può controllare `GET /health` ogni 5 minuti e
+avvisarti via email. `/health` è pensato per i monitor: non tocca il database e
+risponde in pochi millisecondi.
+
+```bash
+curl -s https://<nome-macchina>.<tailnet>.ts.net/health
+# {"status":"ok","versione":"3.2.0","scheduler_attivo":true,
+#  "llm":true,"uptime_seconds":81.9,"uptime_iso":"2026-11-18T14:06:27Z"}
+```
+
+Se `uptime_seconds` torna a un valore basso, il processo è stato riavviato:
+indaga nei log (`backend/logs/`) invece di ignorarlo. Un monitoraggio gratuito
+non rende il servizio a prova di guasto, ma ti dice subito se la VM o il tunnel
+sono caduti.
 
 ## 7. Se preferisci non creare una VM
 
@@ -182,6 +193,23 @@ Puoi tenere il PC Windows attuale acceso 24/7 con Tailscale Funnel e
 l'avvio automatico di `start-atlas.bat`. È gratis, ma dipende da corrente,
 Internet, aggiornamenti Windows e dal PC accesso. Non è equivalente a un server
 cloud e non posso garantire l'uptime.
+
+`start-atlas.bat` è idempotente: avvia uvicorn solo se la porta 8010 è libera e
+riattiva il Funnel solo se non è già configurato. Puoi quindi richiamarlo ogni
+pochi minuti come watchdog con l'Utilità di pianificazione di Windows
+(PowerShell come utente corrente, senza amministratore):
+
+```powershell
+$bat = "C:\percorso\atlas-ai\backend\start-atlas.bat"
+schtasks /create /tn "ATLAS AI Autostart"  /tr "`"$bat`"" /sc onlogon       /f
+schtasks /create /tn "ATLAS AI Keepalive" /tr "`"$bat`"" /sc minute /mo 10 /f
+schtasks /query /tn "ATLAS AI Keepalive" /fo LIST /v   # Ultimo esito: 0
+```
+
+Cosa copre davvero: crash del backend, tunnel spento dopo un riavvio, accesso
+a Windows. Cosa **non** copre: PC spento, sospensione, assenza di rete,
+aggiornamenti Windows che richiedono un riavvio. Per questo un monitor esterno
+(UptimeRobot su `/health`) resta necessario.
 
 ## 8. iOS: cosa è gratis e cosa no
 

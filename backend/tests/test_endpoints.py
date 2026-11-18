@@ -20,6 +20,15 @@ class TestHealth:
         assert body.get("db_mode") in ("locale", "supabase")
         assert isinstance(body.get("llm"), bool)
 
+    def test_health_endpoint(self, client):
+        response = client.get("/health")
+        assert response.status_code == 200
+        body = response.json()
+        assert body.get("status") == "ok"
+        assert body.get("versione") == "3.2.0"
+        assert body.get("uptime_seconds", 0) >= 0
+        assert "uptime_iso" in body
+
     def test_profili_ritorna_slug_noti(self, client):
         response = client.get("/profili")
         assert response.status_code == 200

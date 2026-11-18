@@ -18,6 +18,7 @@ import binascii
 import os
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any
 
 from dotenv import load_dotenv
@@ -111,6 +112,9 @@ from app.tools.italian import lezione_del_giorno, normalizza_livello, quiz_per_l
 log = get_logger(__name__)
 
 limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
+
+# Uptime del processo, usato da /health per i monitor esterni.
+_STARTED_AT = time.time()
 
 
 # ---------------- Lifespan ----------------
@@ -211,6 +215,24 @@ def read_root(request: Request) -> HealthResponse:
         notifiche="expo",
         llm=bool(ai_router.chiavi),
     )
+
+
+@app.get("/health")
+@limiter.limit("240/minute")
+def healthcheck(request: Request) -> dict[str, Any]:
+    """Health check leggero per i monitor di uptime (UptimeRobot, systemd, CI).
+
+    Non tocca il database: risponde in pochi millisecondi anche sotto carico.
+    """
+    return {
+        "status": "ok",
+        "versione": "3.2.0",
+        "ambiente": os.getenv("APP_ENV", "development"),
+        "scheduler_attivo": get_scheduler() is not None,
+        "llm": bool(ai_router.chiavi),
+        "uptime_seconds": round(time.time() - _STARTED_AT, 1),
+        "uptime_iso": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
 
 
 # ---------------- Profili ----------------

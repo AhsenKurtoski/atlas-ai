@@ -7,7 +7,7 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 > lezioni di italiano, integrazione reale con Gmail/Calendar e server MCP, e un
 > **agente browser Chromium** che apre siti, clicca, compila moduli e legge pagine dinamiche.
 
-**Licenza MIT** · CI su GitHub Actions · 166 test backend · TypeScript strict a 0 errori
+**Licenza MIT** · CI su GitHub Actions · 167 test backend · TypeScript strict a 0 errori
 
 [![CI](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ci.yml)
 [![E2E](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml)
@@ -265,7 +265,7 @@ lo dice e spiega come attivarlo.
 ## 🧪 Qualità & test
 
 ```bash
-cd backend && pytest -q          # 166 test (18 browser Chromium reali + 2 test del loop agente)
+cd backend && pytest -q          # 167 test (18 browser Chromium reali + 2 test del loop agente)
 cd frontend && npm run typecheck  # 0 errori (strict)
 cd frontend && npm run test:e2e   # login + lista spesa nel browser (backend su :8010)
 ```
@@ -315,7 +315,7 @@ atlas-ai/
 │   │   │   ├── google_oauth.py # OAuth Gmail/Calendar
 │   │   │   └── browser.py      # agente Chromium: worker, sessioni, SSRF
 │   │   └── tools/              # 50 tool (browser, family, finance, travel, utility, MCP, italiano)
-│   ├── tests/                  # 166 test
+│   ├── tests/                  # 167 test
 │   └── supabase_schema.sql
 └── frontend/
     ├── App.tsx                 # AuthContext, sessione, navigazione, notifiche
