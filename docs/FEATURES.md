@@ -10,6 +10,7 @@ risponde con un messaggio esplicito e non simula un successo.
 |---|---|---|---|---|
 | Login PIN, sessione persistente, logout con revoca | ✅ | ✅ | ✅ | — |
 | Profili famiglia e isolamento chat per profilo | ✅ | ✅ | ✅ | — |
+| Cambio PIN dall'app (Impostazioni → Cambia PIN) con revoca sessioni | ✅ | ✅ | ✅ | profilo `io` |
 | Home con dashboard, budget, todo e promemoria | ✅ | ✅ | ✅ | backend |
 | Lista spesa condivisa (aggiungi/completa/elimina/pulisci) | ✅ | ✅ | ✅ | backend |
 | Budget per categoria e totale mese | ✅ | ✅ | ✅ | backend |
@@ -51,7 +52,9 @@ risponde con un messaggio esplicito e non simula un successo.
 | PIN bcrypt (12 rounds), token HMAC, TTL 8h | ✅ |
 | Logout con denylist del token | ✅ |
 | Rate limit PIN/chat | ✅ |
-| Ruoli: solo `io` crea/elimina profili | ✅ |
+| Ruoli: solo `io` crea/elimina profili e cambia i PIN | ✅ |
+| Cambio PIN → sessioni già aperte di quel profilo revocate subito | ✅ |
+| Profili fail-closed in produzione + backup automatico del DB locale | ✅ |
 | SSRF su fetch, browser, XHR, iframe, immagini | ✅ |
 | Prompt injection: pagine trattate come dati | ✅ |
 | Segreti solo nel backend, `.env` ignorato | ✅ |

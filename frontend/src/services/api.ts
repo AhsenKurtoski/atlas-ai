@@ -276,6 +276,11 @@ class ApiService {
     return this._request('DELETE', `/profili/${encodeURIComponent(slug)}`);
   }
 
+  /** Cambia il PIN di un profilo (solo amministratore). Chiude le sessioni attive di quel profilo. */
+  async changePin(slug: string, pin: string): Promise<GenericResult> {
+    return this._request<GenericResult>('POST', `/profili/${encodeURIComponent(slug)}/pin`, { pin });
+  }
+
   // ---------------- Chat ----------------
   async sendMessage(
     msg: string,

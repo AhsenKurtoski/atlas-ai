@@ -29,7 +29,7 @@ funzionalità dichiarate nei README ma inesistenti. Dopo gli interventi:
 | Profili | ❌ "Aggiungi profilo" non faceva nulla | ✅ creazione/eliminazione reali con PIN |
 | Italiano | ❌ schermata statica, punteggi finti | ✅ lezioni, quiz, punti e streak reali |
 | Sessione app | ❌ riavvio → nessun ripristino | ✅ ripristino validato + logout |
-| Test backend | 54 dichiarati (con `verify_pin` patchato) | 185 reali (18 Chromium + 2 loop Gemini), nessun patch dell'auth |
+| Test backend | 54 dichiarati (con `verify_pin` patchato) | 186 reali (18 Chromium + 2 loop Gemini), nessun patch dell'auth |
 | Typecheck frontend | dichiarato 0 | ✅ verificato 0 |
 | Multi-utente | ruoli assenti, logout non revocava | ✅ isolamento per profilo, admin-only, revoca reale |
 | Open source | nessuna LICENSE radice, CI assente | ✅ MIT, SECURITY, CONTRIBUTING, CI |
@@ -155,7 +155,7 @@ funzionalità dichiarate nei README ma inesistenti. Dopo gli interventi:
 | Agente browser | 18 test con Chromium su server locale (click, form, select, scroll, back, DNS su XHR/iframe/immagini, SSRF, sessioni) | ✅ reale |
 | Loop Gemini | 2 test con client finto (tool multipli, function-response, limite turni) | ✅ reale |
 | Health `/` | uvicorn reale + curl | ✅ 200, 5 profili, 12 automazioni, db_mode |
-| Login PIN | curl `0000`, `1111` + 185 test | ✅ token valido, PIN errato rifiutato |
+| Login PIN | curl `0000`, `1111` + 186 test | ✅ token valido, PIN errato rifiutato |
 | Protezione endpoint | curl senza token | ✅ 401 |
 | Todos CRUD | curl + test | ✅ aggiunta, lista, completamento |
 | Budget | curl + test | ✅ totale e percentuali |
@@ -238,7 +238,7 @@ Priorità bassa:
 
 ```text
 backend:  python -m venv venv (Python 3.12) + pip install -r requirements.txt   → OK
-backend:  python -m pytest -q                                                  → 185 passed
+backend:  python -m pytest -q                                                  → 186 passed
 backend:  pytest tests/test_browser.py -v                                      → 18 passed (Chromium reale)
 backend:  pytest tests/test_ai_loop.py -v                                      → 2 passed (client Gemini finto)
 backend:  python -m playwright install chromium                                → OK (Chromium 159)

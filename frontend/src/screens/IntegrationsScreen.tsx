@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import apiService, { AppSettings, GoogleStatus, ProfileRow, ReminderRow } from '../services/api';
 import {
   registerPushToken,
@@ -29,6 +29,7 @@ import CONFIG from '../config';
 const LIVELLI = ['A1', 'A2', 'B1', 'B2', 'C1'];
 
 export default function IntegrationsScreen() {
+  const navigation = useNavigation<any>();
   const { profileId, profile, clearAuth } = useAuth();
   const isAdmin = profileId === 'io';
 
@@ -474,6 +475,23 @@ export default function IntegrationsScreen() {
           automation('price_watcher'),
           (next) => toggleAutomation('price_watcher', next)
         )}
+
+        <Text className="text-2xl font-bold text-white mb-5 ml-2 mt-4">Sicurezza</Text>
+
+        <TouchableOpacity
+          onPress={() => navigation.navigate('CambioPin')}
+          className="bg-[rgba(255,255,255,0.06)] p-5 rounded-3xl mb-8 border border-white/5 flex-row justify-between items-center"
+        >
+          <View className="flex-1 pr-4">
+            <Text className="text-white text-xl font-bold">🔐 Cambia PIN</Text>
+            <Text className="text-gray-400 mt-1">
+              {isAdmin
+                ? 'Aggiorna il PIN di un profilo: le sue sessioni aperte vengono chiuse subito.'
+                : 'Solo l\'amministratore può cambiare i PIN della famiglia.'}
+            </Text>
+          </View>
+          <Text className="text-[#a78bfa] font-bold text-2xl">›</Text>
+        </TouchableOpacity>
 
         <Text className="text-2xl font-bold text-white mb-5 ml-2 mt-4">Gestione Profili</Text>
 

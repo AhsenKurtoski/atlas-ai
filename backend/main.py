@@ -56,6 +56,7 @@ from app.core.database import (
     get_user_memory,
     is_demo_pin_hash,
     is_mock_mode,
+    pin_version as db_pin_version,
     save_message,
     save_push_token,
     cancel_reminder,
@@ -91,7 +92,7 @@ from app.core.schemas import (
 )
 from app.core.security import (
     create_access_token,
-    decode_access_token,
+    decode_token_details,
     hash_pin,
     normalize_slug,
     sha256_text,
@@ -205,13 +206,21 @@ def get_current_profile(request: Request) -> str:
     if not header.lower().startswith("bearer "):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token mancante: effettua l'accesso.")
     raw_token = header[7:].strip()
-    slug = decode_access_token(raw_token)
-    if not slug:
+    details = decode_token_details(raw_token)
+    if not details:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessione scaduta: effettua di nuovo l'accesso.")
+    slug, _expires_at, token_version = details
     if is_token_revoked(sha256_text(raw_token)):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessione chiusa: effettua di nuovo l'accesso.")
-    if slug not in fetch_profiles():
+    profilo = fetch_profiles().get(slug)
+    if not profilo:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Profilo non più valido.")
+    if token_version != db_pin_version(profilo):
+        # Il PIN è cambiato dopo l'emissione del token: sessione revocata.
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "PIN aggiornato: accedi di nuovo con il nuovo PIN.",
+        )
     return slug
 
 
@@ -350,17 +359,27 @@ def aggiorna_pin_profilo(
     if is_mock_mode() and backup is None:
         log.warning("Backup pre-cambio PIN non riuscito: procedo comunque.")
 
+    nuova_versione = db_pin_version(profilo) + 1
     upsert_profile(
         slug=target,
         nome=str(profilo.get("nome") or target),
         lingua_madre=str(profilo.get("lingua_madre") or "Italiano"),
         livello_italiano=str(profilo.get("livello_italiano") or "B1"),
         pin_hash=hash_pin(payload.pin),
+        pin_version=nuova_versione,
     )
-    log.info("PIN aggiornato per %s da %s", target, slug_autenticato)
+    log.info(
+        "PIN aggiornato per %s da %s: sessioni precedenti revocate (v%d)",
+        target,
+        slug_autenticato,
+        nuova_versione,
+    )
     return GenericResponse(
         status="ok",
-        message=f"PIN aggiornato per '{target}'. Le sessioni già aperte restano valide fino alla scadenza.",
+        message=(
+            f"PIN aggiornato per '{target}'. Le sessioni già aperte di quel profilo "
+            "sono state chiuse: serve accedere di nuovo con il nuovo PIN."
+        ),
     )
 
 
@@ -390,7 +409,7 @@ async def verifica_pin(request: Request, payload: PinAuthRequest) -> PinAuthResp
         log.info("PIN errato per %s", profilo.get("slug"))
         return PinAuthResponse(auth=False, message="PIN errato.")
 
-    token = create_access_token(profilo["slug"])
+    token = create_access_token(profilo["slug"], pin_version=db_pin_version(profilo))
     log.info("Auth OK: %s", profilo["slug"])
     return PinAuthResponse(
         auth=True,

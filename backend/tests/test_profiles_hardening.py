@@ -104,6 +104,30 @@ class TestPinAdmin:
         vecchio = client.post("/auth/pin", json={"profilo": slug, "pin": "1234"})
         assert vecchio.json()["auth"] is False
 
+    def test_cambio_pin_invalida_le_sessioni_del_profilo(self, client, auth_headers):
+        slug = self._crea_profilo(client, auth_headers, slug="pinsess")
+        sessione = client.post("/auth/pin", json={"profilo": slug, "pin": "1234"}).json()
+        headers_profilo = {"Authorization": f"Bearer {sessione['token']}"}
+        assert client.get("/auth/me", headers=headers_profilo).status_code == 200
+
+        cambio = client.post(f"/profili/{slug}/pin", headers=auth_headers, json={"pin": "556677"})
+        assert cambio.json()["status"] == "ok"
+        assert "sessioni" in cambio.json()["message"].lower()
+
+        revocata = client.get("/auth/me", headers=headers_profilo)
+        assert revocata.status_code == 401
+        assert "PIN aggiornato" in revocata.json()["message"]
+
+        # Il token dell'amministratore resta valido: cambia solo il profilo toccato.
+        assert client.get("/auth/me", headers=auth_headers).status_code == 200
+
+        nuovo = client.post("/auth/pin", json={"profilo": slug, "pin": "556677"}).json()
+        assert nuovo["auth"] is True
+        assert (
+            client.get("/auth/me", headers={"Authorization": f"Bearer {nuovo['token']}"}).status_code
+            == 200
+        )
+
     def test_pin_non_numerico_422(self, client, auth_headers):
         risposta = client.post("/profili/io/pin", headers=auth_headers, json={"pin": "abcd"})
         assert risposta.status_code == 422

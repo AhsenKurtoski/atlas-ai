@@ -73,7 +73,7 @@ cd backend
 Risultato atteso:
 
 ```text
-185 passed
+186 passed
 ```
 
 Test mirati:
@@ -200,6 +200,8 @@ Per iOS serve un account Apple e `eas build --profile development --platform ios
 | Browser | “Apri https://example.com e dimmi il titolo” | `Example Domain` |
 | Browser multi-step | “Apri https://news.ycombinator.com e dimmi i primi 3 titoli” | titoli reali |
 | Browser + form | “Apri https://www.wikipedia.org, cerca ‘Roma’ e riassumi” | risultati reali |
+| Cambio PIN | Impostazioni → Cambia PIN (profilo `io`) → scegli profilo e nuovo PIN | PIN aggiornato; il profilo rientra solo con quello nuovo |
+| Sessioni revocate | dopo il cambio PIN, usa un token emesso prima (curl) | `401` con “PIN aggiornato: accedi di nuovo” |
 | Logout | Impostazioni → Esci | torni ai profili; il token è revocato |
 
 ---
@@ -355,7 +357,7 @@ Dopo ogni push su `main`, apri:
 
 Devono essere verdi tutti i workflow:
 
-- **CI / Backend (pytest, Python 3.12)** — installa Chromium e esegue 185 test;
+- **CI / Backend (pytest, Python 3.12)** — installa Chromium e esegue 186 test;
 - **CI / Frontend (TypeScript)** — `npm ci` + `tsc --noEmit`;
 - **E2E / Web smoke** — avvia FastAPI, esporta il web e verifica login, lista spesa e generazione PDF nel browser;
 - **iOS Build** — genera il progetto iOS e compila l'app per il simulatore su macOS;
@@ -386,7 +388,7 @@ non ignorare un test rosso. Se fallisce l'installazione di Chromium, verifica
 
 ## 15. Checklist finale
 
-- [ ] `pytest -q` → 185 passed
+- [ ] `pytest -q` → 186 passed
 - [ ] `pytest tests/test_browser.py -v` → 18 passed
 - [ ] `pytest tests/test_ai_loop.py -v` → 2 passed
 - [ ] `npx tsc --noEmit` → 0 errori

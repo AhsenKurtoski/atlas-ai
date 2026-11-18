@@ -17,11 +17,16 @@ CREATE TABLE IF NOT EXISTS profiles (
     lingua_madre VARCHAR(50) DEFAULT 'Italiano',
     livello_italiano VARCHAR(20) DEFAULT 'C1',
     pin_hash VARCHAR(255),                       -- bcrypt hash del PIN
+    -- Avanza a ogni cambio PIN: invalida i token emessi prima.
+    pin_version INTEGER NOT NULL DEFAULT 0,
     punti_famiglia INTEGER DEFAULT 0,
     streak_giorni INTEGER DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Database già creati prima della revoca sessioni: esegui una volta
+--   ALTER TABLE profiles ADD COLUMN IF NOT EXISTS pin_version INTEGER NOT NULL DEFAULT 0;
 
 -- Trigger per mantenere updated_at aggiornato
 DO $$ BEGIN

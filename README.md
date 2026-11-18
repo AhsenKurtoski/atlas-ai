@@ -7,7 +7,7 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 > lezioni di italiano, integrazione reale con Gmail/Calendar e server MCP, e un
 > **agente browser Chromium** che apre siti, clicca, compila moduli e legge pagine dinamiche.
 
-**Licenza MIT** · CI su GitHub Actions · 185 test backend · TypeScript strict a 0 errori
+**Licenza MIT** · CI su GitHub Actions · 186 test backend · TypeScript strict a 0 errori
 
 [![CI](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ci.yml)
 [![E2E](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml)
@@ -202,7 +202,8 @@ Expo Go, poi `10.0.2.2` su emulatore Android, poi `localhost`.
 | Error handler globale (nessuno stacktrace esposto) | ✅ |
 | Segreto di firma persistito con permessi 600 (o da env) | ✅ |
 | **Logout reale**: token revocato sul server (denylist fino a scadenza) | ✅ |
-| **Ruoli**: solo l'amministratore `io` crea/elimina profili e cambia i PIN (`POST /profili/{slug}/pin`) | ✅ |
+| **Ruoli**: solo l'amministratore `io` crea/elimina profili e cambia i PIN (`POST /profili/{slug}/pin`, o Impostazioni → Cambia PIN) | ✅ |
+| **Cambio PIN = revoca sessioni**: le sessioni aperte di quel profilo ricevono 401 subito (`pin_version` nel token) | ✅ |
 | **PIN demo rifiutati in produzione** (login e cambio PIN), anche se un backup vecchio li reintroduce | ✅ |
 | **Fail closed**: in produzione, se `profiles.json` manca/è corrotto/parziale nessun profilo viene caricato | ✅ |
 | **Backup automatico** di `_local_db` all'avvio e ogni 6 ore, ultimi 14 archivi in `backend/_backups` | ✅ |
@@ -269,7 +270,7 @@ lo dice e spiega come attivarlo.
 ## 🧪 Qualità & test
 
 ```bash
-cd backend && pytest -q          # 185 test (18 browser Chromium reali + 2 test del loop agente)
+cd backend && pytest -q          # 186 test (18 browser Chromium reali + 2 test del loop agente)
 cd frontend && npm run typecheck  # 0 errori (strict)
 cd frontend && npm run test:e2e   # login + lista spesa nel browser (backend su :8010)
 ```
@@ -319,7 +320,7 @@ atlas-ai/
 │   │   │   ├── google_oauth.py # OAuth Gmail/Calendar
 │   │   │   └── browser.py      # agente Chromium: worker, sessioni, SSRF
 │   │   └── tools/              # 50 tool (browser, family, finance, travel, utility, MCP, italiano)
-│   ├── tests/                  # 185 test
+│   ├── tests/                  # 186 test
 │   └── supabase_schema.sql
 └── frontend/
     ├── App.tsx                 # AuthContext, sessione, navigazione, notifiche

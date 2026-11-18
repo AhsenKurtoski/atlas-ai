@@ -145,17 +145,31 @@ def _sign(payload: str) -> str:
     return hmac.new(_secret_key().encode("utf-8"), payload.encode("ascii"), hashlib.sha256).hexdigest()
 
 
-def create_access_token(profile_slug: str, ttl_seconds: Optional[int] = None) -> str:
-    """Crea un token `<payload>.<firma>` con scadenza (HMAC-SHA256)."""
+def create_access_token(
+    profile_slug: str,
+    ttl_seconds: Optional[int] = None,
+    pin_version: int = 0,
+) -> str:
+    """Crea un token `<payload>.<firma>` con scadenza (HMAC-SHA256).
+
+    `pin_version` lega la sessione alla versione del PIN del profilo: quando
+    l'amministratore cambia il PIN, la versione avanza e i token emessi prima
+    diventano invalidi (revoca immediata delle sessioni di quel profilo).
+    """
     if not profile_slug:
         raise ValueError("Slug profilo obbligatorio per creare un token")
     expires_at = int(time.time()) + int(ttl_seconds or token_ttl_seconds())
-    payload = _b64encode(f"{profile_slug}:{expires_at}".encode("utf-8"))
+    version = max(0, int(pin_version))
+    payload = _b64encode(f"{profile_slug}:{expires_at}:{version}".encode("utf-8"))
     return f"{payload}.{_sign(payload)}"
 
 
-def decode_access_token(token: str) -> Optional[str]:
-    """Ritorna lo slug del profilo se il token è valido e non scaduto, altrimenti None."""
+def decode_token_details(token: str) -> Optional[tuple[str, int, int]]:
+    """Ritorna (slug, expires_at, pin_version) se il token è valido.
+
+    I token emessi prima dell'introduzione di `pin_version` hanno due campi:
+    vengono letti con versione 0, così restano validi finché il PIN non cambia.
+    """
     if not token or "." not in token:
         return None
     payload, signature = token.rsplit(".", 1)
@@ -165,27 +179,28 @@ def decode_access_token(token: str) -> Optional[str]:
         return None
     try:
         raw = _b64decode(payload).decode("utf-8")
-        slug, expires_raw = raw.rsplit(":", 1)
+        parts = raw.rsplit(":", 2)
+        if len(parts) == 3:
+            slug, expires_raw, version_raw = parts
+            version = int(version_raw)
+        else:
+            slug, expires_raw = parts
+            version = 0
         expires_at = int(expires_raw)
     except (ValueError, UnicodeDecodeError):
         return None
     if not slug or expires_at < int(time.time()):
         return None
-    return slug
+    return slug, expires_at, max(0, version)
+
+
+def decode_access_token(token: str) -> Optional[str]:
+    """Ritorna lo slug del profilo se il token è valido e non scaduto, altrimenti None."""
+    details = decode_token_details(token)
+    return details[0] if details else None
 
 
 def token_info(token: str) -> Optional[tuple[str, int]]:
     """Ritorna (slug, expires_at) se valido, altrimenti None."""
-    if not token or "." not in token:
-        return None
-    payload, signature = token.rsplit(".", 1)
-    if not payload or not signature or not hmac.compare_digest(_sign(payload), signature):
-        return None
-    try:
-        slug, expires_raw = _b64decode(payload).decode("utf-8").rsplit(":", 1)
-        expires_at = int(expires_raw)
-    except (ValueError, UnicodeDecodeError):
-        return None
-    if not slug or expires_at < int(time.time()):
-        return None
-    return slug, expires_at
+    details = decode_token_details(token)
+    return (details[0], details[1]) if details else None

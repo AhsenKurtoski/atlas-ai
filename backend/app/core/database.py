@@ -654,6 +654,16 @@ DEMO_PINS: dict[str, str] = {
 }
 
 
+def pin_version(profile: dict | None) -> int:
+    """Versione del PIN di un profilo (0 se mai cambiato)."""
+    if not profile:
+        return 0
+    try:
+        return max(0, int(profile.get("pin_version") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def is_demo_pin_hash(pin_hash: Optional[str]) -> bool:
     """True se l'hash corrisponde a uno dei PIN demo del progetto."""
     if not pin_hash:
@@ -695,6 +705,7 @@ def fetch_profiles() -> dict[str, dict]:
             "lingua_madre": row.get("lingua_madre", "Italiano"),
             "livello_italiano": row.get("livello_italiano", "B1"),
             "pin_hash": row.get("pin_hash"),
+            "pin_version": row.get("pin_version") or 0,
         }
     return profiles or _local_profiles()
 
@@ -710,6 +721,7 @@ def upsert_profile(
     lingua_madre: str = "Italiano",
     livello_italiano: str = "B1",
     pin_hash: Optional[str] = None,
+    pin_version: Optional[int] = None,
 ) -> dict | None:
     """Crea o aggiorna un profilo famiglia."""
     client = get_client()
@@ -723,6 +735,8 @@ def upsert_profile(
     }
     if pin_hash:
         data["pin_hash"] = pin_hash
+    if pin_version is not None:
+        data["pin_version"] = int(pin_version)
     client.table("profiles").upsert(data, on_conflict="slug").execute()
     log.info("Profilo salvato: %s (%s)", slug, nome)
     return data
@@ -734,6 +748,7 @@ def _fb_upsert_profile(
     lingua_madre: str = "Italiano",
     livello_italiano: str = "B1",
     pin_hash: Optional[str] = None,
+    pin_version: Optional[int] = None,
 ) -> dict:
     profiles = _local_profiles()
     existing = profiles.get(slug, {})
@@ -743,6 +758,9 @@ def _fb_upsert_profile(
         "lingua_madre": lingua_madre,
         "livello_italiano": livello_italiano,
         "pin_hash": pin_hash or existing.get("pin_hash") or "",
+        "pin_version": int(pin_version)
+        if pin_version is not None
+        else int(existing.get("pin_version") or 0),
     }
     profiles[slug] = profile
     _local_profiles_write(profiles)

@@ -57,8 +57,15 @@ ATLAS è pensato per **una famiglia su un'istanza privata**, non come SaaS multi
   o parziale, non viene caricato nessun profilo (e nessun fallback ai PIN demo).
 - **PIN demo bloccati in produzione** anche a livello di autenticazione, come
   difesa in profondità rispetto al solo fail closed sul file.
-- **Cambio PIN** riservato all'amministratore (`POST /profili/{slug}/pin`), con
-  validazione 4-8 cifre, rate limit e backup automatico prima della scrittura.
+- **Cambio PIN** riservato all'amministratore (`POST /profili/{slug}/pin`, e
+  Impostazioni → Cambia PIN nell'app), con validazione 4-8 cifre, rate limit e
+  backup automatico prima della scrittura.
+- **Revoca immediata delle sessioni**: ogni profilo ha un `pin_version` che
+  avanza al cambio PIN. I token portano la versione con cui sono stati emessi,
+  quindi tutte le sessioni aperte di quel profilo ricevono 401 al primo uso (le
+  sessioni degli altri profili restano valide).
+- Con Supabase, aggiungi la colonna `pin_version INTEGER NOT NULL DEFAULT 0`
+  alla tabella `profiles`; in modalità locale è dentro `profiles.json`.
 - **Backup automatico** del database locale con rotazione (14 archivi).
 - **CORS fail closed** in produzione: solo le origini elencate esplicitamente.
 - Token firmati HMAC-SHA256 con scadenza; **revoca server-side al logout** (denylist).

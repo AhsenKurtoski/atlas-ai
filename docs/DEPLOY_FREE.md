@@ -88,6 +88,11 @@ curl -X POST http://127.0.0.1:8010/profili/mamma/pin \
   -d '{"pin":"482915"}'
 ```
 
+Il cambio PIN chiude subito le sessioni già aperte di quel profilo: i suoi
+dispositivi tornano alla schermata dei profili e devono accedere con il nuovo
+PIN. Lo stesso si può fare dall'app in **Impostazioni → Cambia PIN** (profilo
+`io`).
+
 Prova il backend in primo piano:
 
 ```bash
