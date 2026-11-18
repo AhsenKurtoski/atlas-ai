@@ -73,7 +73,7 @@ cd backend
 Risultato atteso:
 
 ```text
-167 passed
+185 passed
 ```
 
 Test mirati:
@@ -84,6 +84,9 @@ Test mirati:
 
 # 2 test del loop Gemini con client finto (nessuna chiave necessaria)
 .\venv\Scripts\python.exe -m pytest tests/test_ai_loop.py -v
+
+# Hardening PIN, backup del DB locale e CORS (nessuna rete, nessun dato reale)
+.\venv\Scripts\python.exe -m pytest tests/test_profiles_hardening.py -v
 
 # Solo il test DNS su XHR/iframe/immagini
 .\venv\Scripts\python.exe -m pytest tests/test_browser.py::TestBrowserReale::test_blocca_dns_xhr_iframe_e_immagini -v
@@ -352,7 +355,7 @@ Dopo ogni push su `main`, apri:
 
 Devono essere verdi tutti i workflow:
 
-- **CI / Backend (pytest, Python 3.12)** — installa Chromium e esegue 167 test;
+- **CI / Backend (pytest, Python 3.12)** — installa Chromium e esegue 185 test;
 - **CI / Frontend (TypeScript)** — `npm ci` + `tsc --noEmit`;
 - **E2E / Web smoke** — avvia FastAPI, esporta il web e verifica login, lista spesa e generazione PDF nel browser;
 - **iOS Build** — genera il progetto iOS e compila l'app per il simulatore su macOS;
@@ -383,7 +386,7 @@ non ignorare un test rosso. Se fallisce l'installazione di Chromium, verifica
 
 ## 15. Checklist finale
 
-- [ ] `pytest -q` → 167 passed
+- [ ] `pytest -q` → 185 passed
 - [ ] `pytest tests/test_browser.py -v` → 18 passed
 - [ ] `pytest tests/test_ai_loop.py -v` → 2 passed
 - [ ] `npx tsc --noEmit` → 0 errori

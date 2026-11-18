@@ -37,6 +37,7 @@ from starlette.concurrency import run_in_threadpool
 from app.ai_router import ai_router
 from app.core.context import current_profile
 from app.core.database import (
+    DEMO_PINS,
     add_spesa,
     add_todo,
     complete_todo_by_index,
@@ -53,6 +54,7 @@ from app.core.database import (
     get_settings,
     get_todos,
     get_user_memory,
+    is_demo_pin_hash,
     is_mock_mode,
     save_message,
     save_push_token,
@@ -85,6 +87,7 @@ from app.core.schemas import (
     SettingsUpdateRequest,
     TranscriptionRequest,
     TranscriptionResponse,
+    UpdatePinRequest,
 )
 from app.core.security import (
     create_access_token,
@@ -98,6 +101,7 @@ from app.core.security import (
 )
 from app.core.settings import cors_origins, is_production, scheduler_enabled
 from app.notifiche import invia_a_profilo
+from app.services.backup import backup_local_db
 from app.services.browser import browser_profile, shutdown_browser
 from app.services.pdf import build_pdf
 from app.scheduler import (
@@ -131,6 +135,11 @@ async def lifespan(app: FastAPI):
     log.info("✅ Modalità DB: %s", "MOCK/LOCALE" if is_mock_mode() else "SUPABASE")
     log.info("✅ Chiavi Gemini: %d", len(ai_router.chiavi))
 
+    if is_mock_mode():
+        backup = backup_local_db()
+        if backup is not None:
+            log.info("🗄️ Backup database locale all'avvio: %s", backup.name)
+
     if is_production():
         if not os.getenv("ATLAS_SECRET_KEY", "").strip():
             log.warning(
@@ -146,6 +155,11 @@ async def lifespan(app: FastAPI):
         if "*" in cors_origins():
             log.warning(
                 "⚠️ CORS aperto a tutte le origini: imposta CORS_ALLOWED_ORIGINS in produzione."
+            )
+        elif not cors_origins():
+            log.info(
+                "🔒 CORS chiuso: nessuna origine web autorizzata "
+                "(le app native non usano CORS; imposta CORS_ALLOWED_ORIGINS per la preview web)."
             )
 
     try:
@@ -304,6 +318,52 @@ def elimina_profilo(
     return GenericResponse(status="ok", message=f"Profilo '{target}' eliminato.")
 
 
+@app.post("/profili/{slug}/pin", response_model=GenericResponse)
+@limiter.limit("10/minute")
+def aggiorna_pin_profilo(
+    request: Request,
+    slug: str,
+    payload: UpdatePinRequest,
+    slug_autenticato: str = Depends(get_current_profile),
+) -> GenericResponse:
+    """Cambia il PIN di un profilo esistente (solo amministratore).
+
+    Il PIN viene salvato solo come hash bcrypt. Prima della scrittura viene
+    creato un backup di `_local_db`, così un cambio sbagliato è recuperabile.
+    """
+    if slug_autenticato != "io":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Solo il profilo amministratore può cambiare i PIN.",
+        )
+    target = normalize_slug(slug)
+    profilo = fetch_profiles().get(target)
+    if not profilo:
+        return GenericResponse(status="error", message="Profilo non trovato.")
+    if is_production() and payload.pin in DEMO_PINS.values():
+        return GenericResponse(
+            status="error",
+            message="PIN demo non ammesso in produzione: scegli un PIN personale.",
+        )
+
+    backup = backup_local_db()
+    if is_mock_mode() and backup is None:
+        log.warning("Backup pre-cambio PIN non riuscito: procedo comunque.")
+
+    upsert_profile(
+        slug=target,
+        nome=str(profilo.get("nome") or target),
+        lingua_madre=str(profilo.get("lingua_madre") or "Italiano"),
+        livello_italiano=str(profilo.get("livello_italiano") or "B1"),
+        pin_hash=hash_pin(payload.pin),
+    )
+    log.info("PIN aggiornato per %s da %s", target, slug_autenticato)
+    return GenericResponse(
+        status="ok",
+        message=f"PIN aggiornato per '{target}'. Le sessioni già aperte restano valide fino alla scadenza.",
+    )
+
+
 # ---------------- Auth PIN ----------------
 @app.post("/auth/pin", response_model=PinAuthResponse)
 @limiter.limit("5/minute")  # anti-bruteforce: 5 tentativi al minuto per IP
@@ -318,6 +378,13 @@ async def verifica_pin(request: Request, payload: PinAuthRequest) -> PinAuthResp
     if not pin_hash:
         log.error("Nessun pin_hash configurato per %s", profilo.get("slug"))
         return PinAuthResponse(auth=False, message="Profilo non configurato correttamente.")
+
+    if is_production() and is_demo_pin_hash(pin_hash):
+        log.error("Login bloccato: %s usa ancora un PIN demo in produzione", profilo.get("slug"))
+        return PinAuthResponse(
+            auth=False,
+            message="PIN demo disabilitato in produzione: imposta un PIN personale.",
+        )
 
     if not verify_pin(payload.pin, pin_hash):
         log.info("PIN errato per %s", profilo.get("slug"))

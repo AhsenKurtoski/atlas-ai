@@ -207,7 +207,7 @@ Tailscale già configurato.
 ### 3. Verifica veloce
 
 ```bash
-cd backend && ./venv/Scripts/python.exe -m pytest -q   # 167 test
+cd backend && ./venv/Scripts/python.exe -m pytest -q   # 185 test
 cd frontend && npm run typecheck                      # 0 errori
 cd frontend && npx expo-doctor                        # 17/17 check
 cd frontend && npx expo export --platform android

@@ -33,6 +33,17 @@ class PinAuthResponse(BaseModel):
     message: Optional[str] = None
 
 
+class UpdatePinRequest(BaseModel):
+    pin: str = Field(..., min_length=4, max_length=8, description="Nuovo PIN numerico del profilo")
+
+    @field_validator("pin")
+    @classmethod
+    def _pin_must_be_digits(cls, value: str) -> str:
+        if not is_safe_numeric_pin(value):
+            raise ValueError("Il PIN deve contenere solo cifre (4-8)")
+        return value
+
+
 class MeResponse(BaseModel):
     slug: str
     nome: str

@@ -31,6 +31,7 @@ from app.core.logging_config import get_logger
 from app.core.scheduler_lock import ProcessLock
 from app.core.settings import LOCAL_DB_DIR, default_city, scheduler_timezone
 from app.notifiche import invia_a_profilo, invia_a_tutti
+from app.services.backup import backup_local_db
 from app.tools.family import get_family_todos
 from app.tools.finance import get_crypto_price, riepilogo_budget
 from app.tools.italian import lezione_del_giorno
@@ -272,6 +273,15 @@ def job_crypto_tracker() -> None:
     log.info("📈 Crypto orario: %s", str(btc)[:120])
 
 
+def job_backup_local_db() -> None:
+    """Backup periodico del database locale (JSON in `_local_db`)."""
+    esito = backup_local_db()
+    if esito is None:
+        log.warning("Backup locale non eseguito (vedi log del servizio backup).")
+    else:
+        _log(f"🗄️ Backup locale creato: {esito.name}")
+
+
 def job_promemoria_due() -> None:
     """Invia i promemoria scaduti non ancora pianificati localmente.
 
@@ -381,6 +391,11 @@ def _register_jobs(scheduler: BackgroundScheduler) -> None:
         scheduler, "promemoria_due", job_promemoria_due,
         IntervalTrigger(seconds=30),
     )
+    # Non è un'automazione utente: nessuna chiave in JOB_KEYS, nessuna notifica.
+    _add_job_once(
+        scheduler, "backup_local_db", job_backup_local_db,
+        IntervalTrigger(hours=6),
+    )
     _log(f"✅ Registrate {len(_JOB_IDS)} automazioni")
 
 
@@ -427,6 +442,9 @@ def get_jobs() -> list[dict[str, Any]]:
         return []
     out: list[dict[str, Any]] = []
     for job in scheduler.get_jobs():
+        if job.id not in JOB_KEYS:
+            # Job di servizio (es. backup del database locale): non è un'automazione utente.
+            continue
         next_run = getattr(job, "next_run_time", None)
         out.append(
             {

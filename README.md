@@ -7,7 +7,7 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 > lezioni di italiano, integrazione reale con Gmail/Calendar e server MCP, e un
 > **agente browser Chromium** che apre siti, clicca, compila moduli e legge pagine dinamiche.
 
-**Licenza MIT** · CI su GitHub Actions · 167 test backend · TypeScript strict a 0 errori
+**Licenza MIT** · CI su GitHub Actions · 185 test backend · TypeScript strict a 0 errori
 
 [![CI](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ci.yml)
 [![E2E](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml)
@@ -79,7 +79,7 @@ te lo dice esplicitamente invece di fingere che sia tutto attivo.
 ┌──────────────────────────────┐      HTTP / JSON       ┌─────────────────────────────────────────┐
 │   APP MOBILE                 │ ─────────────────────▶ │  BACKEND FASTAPI (Python 3.11-3.13)     │
 │   React Native · Expo 51     │  Bearer token firmato  │                                         │
-│   NativeWind / Tailwind      │ ◀───────────────────── │  - 30 endpoint REST                     │
+│   NativeWind / Tailwind      │ ◀───────────────────── │  - 37 endpoint REST                     │
 │   AsyncStorage (persistenza) │   Chat + Pin + Push    │  - 50 tool reali per Gemini             │
 │   React Navigation 6         │                        │  - 10 tool browser (Chromium headless)  │
 │   expo-notifications         │                        │  - Auth PIN bcrypt + token HMAC 8h      │
@@ -202,7 +202,11 @@ Expo Go, poi `10.0.2.2` su emulatore Android, poi `localhost`.
 | Error handler globale (nessuno stacktrace esposto) | ✅ |
 | Segreto di firma persistito con permessi 600 (o da env) | ✅ |
 | **Logout reale**: token revocato sul server (denylist fino a scadenza) | ✅ |
-| **Ruoli**: solo l'amministratore `io` crea/elimina profili | ✅ |
+| **Ruoli**: solo l'amministratore `io` crea/elimina profili e cambia i PIN (`POST /profili/{slug}/pin`) | ✅ |
+| **PIN demo rifiutati in produzione** (login e cambio PIN), anche se un backup vecchio li reintroduce | ✅ |
+| **Fail closed**: in produzione, se `profiles.json` manca/è corrotto/parziale nessun profilo viene caricato | ✅ |
+| **Backup automatico** di `_local_db` all'avvio e ogni 6 ore, ultimi 14 archivi in `backend/_backups` | ✅ |
+| **CORS chiuso di default** in produzione: solo le origini elencate in `CORS_ALLOWED_ORIGINS` | ✅ |
 | **Protezione SSRF** su fetch web e browser (DNS su navigazioni, XHR, iframe e immagini) | ✅ |
 | **Prompt injection**: il testo delle pagine è trattato come dato non attendibile | ✅ |
 | **Sessioni browser isolate per profilo** (cookie/pagine separati, TTL 15 min) | ✅ |
@@ -265,7 +269,7 @@ lo dice e spiega come attivarlo.
 ## 🧪 Qualità & test
 
 ```bash
-cd backend && pytest -q          # 167 test (18 browser Chromium reali + 2 test del loop agente)
+cd backend && pytest -q          # 185 test (18 browser Chromium reali + 2 test del loop agente)
 cd frontend && npm run typecheck  # 0 errori (strict)
 cd frontend && npm run test:e2e   # login + lista spesa nel browser (backend su :8010)
 ```
@@ -315,7 +319,7 @@ atlas-ai/
 │   │   │   ├── google_oauth.py # OAuth Gmail/Calendar
 │   │   │   └── browser.py      # agente Chromium: worker, sessioni, SSRF
 │   │   └── tools/              # 50 tool (browser, family, finance, travel, utility, MCP, italiano)
-│   ├── tests/                  # 167 test
+│   ├── tests/                  # 185 test
 │   └── supabase_schema.sql
 └── frontend/
     ├── App.tsx                 # AuthContext, sessione, navigazione, notifiche

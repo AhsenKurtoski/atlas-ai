@@ -34,18 +34,33 @@ ATLAS è pensato per **una famiglia su un'istanza privata**, non come SaaS multi
 
 1. `APP_ENV=production`
 2. `ATLAS_SECRET_KEY` impostata con un segreto lungo e unico (`python -c "import secrets;print(secrets.token_urlsafe(48))"`), condivisa da tutti i worker.
-3. Cambiare i **PIN demo** (`0000/1111/2222/3333/4444`) con `POST /profili` o aggiornando il DB; all'avvio in produzione il backend segnala i PIN ancora invariati.
-4. `CORS_ALLOWED_ORIGINS` impostato esplicitamente (il default `*` è accettato solo in sviluppo).
+3. Cambiare i **PIN demo** (`0000/1111/2222/3333/4444`) con
+   `POST /profili/{slug}/pin` (amministratore `io`, body `{"pin": "123456"}`) o
+   aggiornando il DB. In produzione i PIN demo sono **rifiutati** sia al login sia
+   in fase di cambio PIN, anche se un backup vecchio li reintroduce.
+4. `CORS_ALLOWED_ORIGINS` impostato esplicitamente: in produzione, senza questa
+   variabile, il CORS è **chiuso** (nessuna origine web). In sviluppo resta `*`.
 5. HTTPS obbligatorio davanti al backend (reverse proxy) e `--proxy-headers` per l'IP reale.
 6. `SCHEDULER_ENABLED=true` su **un solo processo** per host: il lock su file impedisce ai worker di duplicare i job, ma su più host serve un processo dedicato.
 7. Rate limiter su Redis (`storage_uri`) se usi più processi e vuoi limiti condivisi.
-8. Backup di `backend/_local_db/` (modalità locale) o del progetto Supabase.
+8. Backup di `backend/_local_db/`: il backend ne crea uno automatico all'avvio e
+   ogni 6 ore in `backend/_backups` (ultimi 14 archivi, escluso il lock).
+   Ripristino: fermare il servizio, scompattare lo zip scelto dentro
+   `backend/_local_db` e riavviare. Per Supabase, esporta il progetto.
 9. Non committare `.env`, `_local_db/`, credenziali Firebase o token Google.
 10. Aggiornare le dipendenze con regolarità (`pip list --outdated`, `npm outdated`).
 
 ## Controlli implementati
 
 - Hash PIN bcrypt (12 rounds), confronto a tempo costante.
+- **Fail closed sui profili**: in produzione, se `profiles.json` manca, è corrotto
+  o parziale, non viene caricato nessun profilo (e nessun fallback ai PIN demo).
+- **PIN demo bloccati in produzione** anche a livello di autenticazione, come
+  difesa in profondità rispetto al solo fail closed sul file.
+- **Cambio PIN** riservato all'amministratore (`POST /profili/{slug}/pin`), con
+  validazione 4-8 cifre, rate limit e backup automatico prima della scrittura.
+- **Backup automatico** del database locale con rotazione (14 archivi).
+- **CORS fail closed** in produzione: solo le origini elencate esplicitamente.
 - Token firmati HMAC-SHA256 con scadenza; **revoca server-side al logout** (denylist).
 - Endpoint privati protetti da `Authorization: Bearer`; 401 uniforme.
 - Ruoli: gestione profili riservata all'amministratore.

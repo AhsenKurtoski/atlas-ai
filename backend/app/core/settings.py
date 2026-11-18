@@ -75,10 +75,16 @@ def gemini_model() -> str:
 
 # ---------------- CORS / rete ----------------
 def cors_origins() -> list[str]:
+    """Origini web consentite.
+
+    In produzione il default è **nessuna origine** (fail closed): le app native
+    non usano CORS, quindi solo una preview web esplicita va autorizzata con
+    `CORS_ALLOWED_ORIGINS`. In sviluppo resta la wildcard per comodità.
+    """
     raw = env("CORS_ALLOWED_ORIGINS", "CORS_ORIGINS")
     parts = [p.strip() for p in raw.split(",") if p.strip()]
     if not parts:
-        return ["*"]
+        return [] if is_production() else ["*"]
     if app_env() == "development":
         for extra in ("http://localhost:8081", "http://localhost:19006", "http://localhost:19000"):
             if extra not in parts:

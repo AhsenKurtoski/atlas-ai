@@ -66,8 +66,26 @@ APP_ENV=production
 ATLAS_SECRET_KEY=<valore-generato>
 SCHEDULER_ENABLED=true
 BROWSER_HEADLESS=true
-# Solo se usi il web: elenca l'origine esatta, non "*"
+# Solo se usi il web: elenca le origini esatte, separate da virgola.
+# In produzione, senza questa variabile, il CORS è chiuso (le app native non lo usano).
 # CORS_ALLOWED_ORIGINS=https://il-tuo-web.example
+```
+
+Con `APP_ENV=production` valgono due protezioni sui PIN:
+
+- i **PIN demo** (`0000/1111/2222/3333/4444`) vengono rifiutati al login e in
+  fase di cambio PIN;
+- se `backend/_local_db/profiles.json` manca o è illeggibile, **nessun profilo
+  viene caricato** (fail closed): nessun accesso finché non ripristini un backup
+  o reimposti i PIN.
+
+Imposta i PIN reali con l'endpoint amministratore (serve un token di `io`):
+
+```bash
+TOKEN=<token restituito da POST /auth/pin per io>
+curl -X POST http://127.0.0.1:8010/profili/mamma/pin \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"pin":"482915"}'
 ```
 
 Prova il backend in primo piano:
@@ -160,7 +178,29 @@ curl https://<nome-macchina>.<tailnet>.ts.net/
 
 ## 6. Backup e monitoraggio
 
-**Backup** (il database locale è in `backend/_local_db/`, mai nel repo):
+**Backup automatico**: con la modalità locale il backend crea uno zip di
+`_local_db` all'avvio e ogni 6 ore in `backend/_backups/`
+(`atlas-local-db-<data>.zip`), conservando gli ultimi 14 archivi ed escludendo
+il file di lock e il segreto di firma `.atlas_secret`. La cartella è in
+`.gitignore`, perché contiene dati personali.
+
+Ripristino:
+
+```bash
+sudo systemctl stop atlas
+cd ~/atlas-ai/backend
+cp -a _local_db _local_db.prima-del-ripristino     # copia di sicurezza
+python3 - <<'PY'
+import zipfile, pathlib
+zip_path = sorted(pathlib.Path('_backups').glob('atlas-local-db-*.zip'))[-1]
+with zipfile.ZipFile(zip_path) as zf:
+    zf.extractall('_local_db')
+print('ripristinato', zip_path.name)
+PY
+sudo systemctl start atlas
+```
+
+**Backup manuale aggiuntivo** (il database locale è in `backend/_local_db/`, mai nel repo):
 
 ```bash
 sudo mkdir -p /var/backups/atlas
@@ -231,7 +271,8 @@ Nessuna di queste strade cambia il codice dell'app: cambia solo la firma.
 - [ ] `curl https://...ts.net/` da rete esterna → `200`
 - [ ] login con PIN reali (non quelli demo) su un telefono
 - [ ] promemoria di prova a 2 minuti, telefono bloccato
-- [ ] backup di `_local_db` presente
+- [ ] backup automatici presenti in `backend/_backups/` (almeno uno)
+- [ ] PIN reali impostati e login demo rifiutato in produzione
 - [ ] monitoraggio UptimeRobot attivo
 
 **Nota onesta:** “gratis per sempre” non significa “SLA garantito”. Oracle può

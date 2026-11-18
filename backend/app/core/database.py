@@ -18,7 +18,7 @@ from typing import Any, Callable, Iterable, Optional, TypeVar
 from supabase import Client, create_client
 
 from app.core.logging_config import get_logger
-from app.core.settings import LOCAL_DB_DIR, supabase_config
+from app.core.settings import LOCAL_DB_DIR, is_production, supabase_config
 
 log = get_logger(__name__)
 
@@ -610,12 +610,34 @@ DEFAULT_PROFILES: dict[str, dict] = {
 
 
 def _local_profiles() -> dict[str, dict]:
-    """Profili locali (file) fusi con i default; il file ha la precedenza."""
+    """Profili locali (file) fusi con i default; il file ha la precedenza.
+
+    In produzione il comportamento è *fail closed*: se il file dei profili manca
+    o è illeggibile non vengono caricati né i profili demo né i loro PIN. Un
+    file parziale non viene fuso con i default, così un profilo mancante non
+    può riabilitare il PIN demo. Il ripristino avviene da un backup di
+    `_local_db` o reimpostando i PIN con `POST /profili/{slug}/pin`.
+    """
     stored = _fallback_read("profiles", None)
     if isinstance(stored, dict) and stored:
+        if is_production():
+            return copy.deepcopy(stored)
         merged = copy.deepcopy(DEFAULT_PROFILES)
         merged.update(stored)
         return merged
+    if is_production():
+        log.error(
+            "Profili assenti o illeggibili in produzione: nessun profilo caricato "
+            "(fail closed). Ripristina un backup di _local_db o reimposta i PIN."
+        )
+        return {}
+    return copy.deepcopy(DEFAULT_PROFILES)
+
+
+def _profiles_fallback() -> dict[str, dict]:
+    """Fallback quando la lettura profili fallisce: mai i PIN demo in produzione."""
+    if is_production():
+        return {}
     return copy.deepcopy(DEFAULT_PROFILES)
 
 
@@ -632,6 +654,15 @@ DEMO_PINS: dict[str, str] = {
 }
 
 
+def is_demo_pin_hash(pin_hash: Optional[str]) -> bool:
+    """True se l'hash corrisponde a uno dei PIN demo del progetto."""
+    if not pin_hash:
+        return False
+    return pin_hash in {
+        str(profile.get("pin_hash")) for profile in DEFAULT_PROFILES.values() if profile.get("pin_hash")
+    }
+
+
 def demo_pins_in_use() -> list[str]:
     """Slug dei profili che usano ancora l'hash PIN demo (avviso in produzione)."""
     profiles = fetch_profiles()
@@ -643,7 +674,7 @@ def demo_pins_in_use() -> list[str]:
     ]
 
 
-@resilient(fallback_return=DEFAULT_PROFILES)
+@resilient(fallback_return=_profiles_fallback())
 def fetch_profiles() -> dict[str, dict]:
     """Restituisce tutti i profili (chiave = slug)."""
     client = get_client()
@@ -665,7 +696,7 @@ def fetch_profiles() -> dict[str, dict]:
             "livello_italiano": row.get("livello_italiano", "B1"),
             "pin_hash": row.get("pin_hash"),
         }
-    return profiles or DEFAULT_PROFILES
+    return profiles or _local_profiles()
 
 
 def _fb_fetch_profiles() -> dict[str, dict]:
