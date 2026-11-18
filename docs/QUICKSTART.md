@@ -8,7 +8,10 @@ dipendono dalla connessione e dal fatto che Python/Node siano già installati.
 1. Apri dal telefono questo link:
    **[ATLAS-AI-android.apk](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.2.0/ATLAS-AI-android.apk)**
 2. Consenti l'installazione da browser e installa l'APK (release firmata, non debug).
-3. Apri ATLAS AI, scegli **io** e inserisci il PIN **0000**.
+3. Apri ATLAS AI, scegli **io** e inserisci il PIN del tuo profilo. Su
+   un'installazione nuova i PIN demo sono `0000`/`1111`/`2222`; sul backend
+   pubblico i PIN demo sono stati sostituiti, quindi usa quelli comunicati
+dall'amministratore (non sono nel repo).
 4. La build pubblica punta al backend HTTPS già attivo:
    `https://atlas-ai.tailf30c71.ts.net`.
 
