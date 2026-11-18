@@ -396,7 +396,9 @@ def _register_jobs(scheduler: BackgroundScheduler) -> None:
         scheduler, "backup_local_db", job_backup_local_db,
         IntervalTrigger(hours=6),
     )
-    _log(f"✅ Registrate {len(_JOB_IDS)} automazioni")
+    utente = len([job_id for job_id in _JOB_IDS if job_id in JOB_KEYS])
+    servizio = len(_JOB_IDS) - utente
+    _log(f"✅ Registrate {utente} automazioni + {servizio} job di servizio")
 
 
 def start_scheduler(run_test: bool = False) -> Optional[BackgroundScheduler]:
