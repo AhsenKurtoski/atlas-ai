@@ -51,26 +51,39 @@ if [ "$INSTALL_STATUS" -ne 0 ]; then
   exit 1
 fi
 
-adb shell am force-stop "$PACKAGE" || true
-adb shell am start -W -n "$ACTIVITY" || true
-sleep 15
-
 dump_ui() {
   adb shell uiautomator dump /sdcard/atlas-window.xml >/dev/null 2>&1 || true
   adb pull /sdcard/atlas-window.xml atlas-window.xml >/dev/null 2>&1 || true
 }
 
-dump_ui
-if grep -q "isn't responding" atlas-window.xml 2>/dev/null; then
-  echo "Dialogo ANR di sistema rilevato; lo chiudo"
-  adb shell input keyevent 4 || true
-  sleep 2
+# Avvia l'app e raccoglie stato processo, UI e logcat.
+launch() {
+  adb shell am force-stop "$PACKAGE" || true
+  adb shell am start -W -n "$ACTIVITY" || true
+  sleep 15
   dump_ui
+  if grep -q "isn't responding" atlas-window.xml 2>/dev/null; then
+    echo "Dialogo ANR di sistema rilevato; lo chiudo"
+    adb shell input keyevent 4 || true
+    sleep 2
+    dump_ui
+  fi
+  adb logcat -d -v brief > android-logcat.txt || true
+  PID="$(adb shell pidof "$PACKAGE" | tr -d '\r' || true)"
+}
+
+launch
+# Flake dell'emulatore: su un AVD appena avviato il provider WebView può fallire
+# l'inizializzazione (chromium: "Invalid file descriptor to ICU data") e far
+# morire l'app al primo uso dei cookie. Rilancio una sola volta in quel caso;
+# un crash dell'app (FATAL EXCEPTION) resta un errore non ritentabile.
+if [ -z "$PID" ] && grep -qE "icu_util\.cc|Invalid file descriptor to ICU" android-logcat.txt; then
+  echo "::warning::WebView dell'emulatore non inizializzata: rilancio ATLAS una volta"
+  sleep 10
+  launch
 fi
 
-PID="$(adb shell pidof "$PACKAGE" | tr -d '\r' || true)"
 echo "Processo ATLAS: '$PID'"
-adb logcat -d -v brief > android-logcat.txt || true
 
 if [ -z "$PID" ]; then
   tail -120 android-logcat.txt || true

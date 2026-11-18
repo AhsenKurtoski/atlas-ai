@@ -367,6 +367,12 @@ Se il job backend fallisce, apri il log del passo “Test” e cerca il primo `F
 non ignorare un test rosso. Se fallisce l'installazione di Chromium, verifica
 `python -m playwright install --with-deps chromium`.
 
+Se fallisce **Android APK** nel passo “Installa e avvia l'APK” con
+`icu_util.cc` o “Invalid file descriptor to ICU data” nel logcat, è il WebView
+dell'emulatore appena creato, non l'app: `android-smoke.sh` rilancia l'app una
+volta solo in quel caso. Un `FATAL EXCEPTION` dell'app invece non viene mai
+ritentato e va corretto.
+
 ---
 
 ## 14. Troubleshooting
