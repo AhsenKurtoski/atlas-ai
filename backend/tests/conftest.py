@@ -26,6 +26,11 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("LOG_LEVEL", "ERROR")
 os.environ["SCHEDULER_ENABLED"] = "false"
+# CORS deterministico: senza questa riga, con un `.env` assente (CI) le origini
+# diventano la wildcard `*` e i test che verificano il rifiuto delle origini
+# esterne fallirebbero solo in CI. Con l'elenco esplicito il middleware si
+# comporta come in produzione anche sui runner.
+os.environ.setdefault("CORS_ALLOWED_ORIGINS", "http://localhost:19007")
 os.environ.pop("SUPABASE_URL", None)
 os.environ.pop("SUPABASE_SERVICE_KEY", None)
 os.environ.pop("SUPABASE_SERVICE_ROLE_KEY", None)
