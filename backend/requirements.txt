@@ -5,16 +5,16 @@
 # ==========================================================
 
 # --- Framework web e ASGI ---
-fastapi==0.115.14
-uvicorn[standard]==0.30.6
+fastapi==0.163.1
+uvicorn[standard]==0.54.0
 pydantic==2.14.3
-pydantic-settings==2.10.1
+pydantic-settings==2.16.3
 
 # --- Rate limiting & sicurezza ---
-slowapi==0.1.9
-limits==3.13.0
-python-multipart==0.0.9
-bcrypt==4.2.0
+slowapi==0.1.10
+limits==5.8.0
+python-multipart==0.0.34
+bcrypt==5.0.0
 # Cifratura dei backup locali (AES/Fernet)
 cryptography==50.0.2
 
@@ -22,31 +22,31 @@ cryptography==50.0.2
 supabase==2.34.1
 
 # --- Google Gemini (SDK unificato, usato da app/ai_router.py) ---
-google-genai==2.14.0
+google-genai==3.3.0
 
 # --- Servizi esterni / API client ---
-requests==2.32.3
-beautifulsoup4==4.12.3
-lxml==5.3.0
-duckduckgo-search==6.3.0
+requests==2.34.2
+beautifulsoup4==4.15.0
+lxml==6.1.3
+duckduckgo-search==8.1.1
 wikipedia==1.4.0
 
 # --- Scheduler automazioni ---
-APScheduler==3.10.4
-pytz==2024.1
+APScheduler==3.11.3
+pytz==2026.6
 
 # --- Firebase Push Notifications (opzionale: solo per token FCM nativi) ---
-firebase-admin==6.5.0
+firebase-admin==7.8.0
 
 # --- Browser agent (Chromium headless) ---
 # Dopo pip install: python -m playwright install chromium
 playwright==1.65.2
 
 # --- Config & Logging ---
-python-dotenv==1.0.1
+python-dotenv==1.2.4
 
 # --- Qualità codice & Test ---
-pytest==8.3.3
-pytest-asyncio==0.24.0
-pytest-cov==5.0.0
+pytest==9.2.0
+pytest-asyncio==1.5.0
+pytest-cov==7.1.0
 httpx==0.28.1
