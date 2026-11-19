@@ -16,6 +16,20 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e
 - Backup cifrati AES/Fernet (`.zip.enc`) con CLI di ripristino
   (`python -m app.services.backup decrypt`).
 
+### Aggiunto — famiglia
+
+- **Controllo genitore** (Impostazioni → Gestione profili → Limiti): fascia oraria,
+  messaggi al giorno e contenuti adatti ai bambini. I limiti sono applicati dal
+  backend: `POST /chat` risponde 403 con il motivo reale fuori orario o a quota
+  esaurita, e per i profili bambino i tool "da adulti" (spese, email, browser,
+  crypto, trading) non vengono passati al modello.
+- **Cronologia chat sincronizzata** (`GET /chat/cronologia`) con ricerca nel testo:
+  gli stessi messaggi su ogni dispositivo, con la cache locale come fallback offline.
+- **Soglie di budget** (`POST /budget/limiti`) e report mensile (`GET /budget/report`)
+  con confronto col mese precedente e avvisi di sforamento nella schermata Budget.
+- Il limite di 15 profili famiglia è ora rispettato anche nella suite di test
+  (ripristino dei profili dopo ogni test).
+
 ### Aggiunto — privacy
 
 - `GET /privacy/informativa` e documento `docs/PRIVACY.md`.

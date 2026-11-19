@@ -36,6 +36,8 @@ token o con token scaduto/revocato rispondono `401` con
 | `DELETE` | `/profili/{slug}` | Elimina un membro (non `io`, non se stesso) |
 | `POST` | `/profili/{slug}/pin` | Cambia PIN, revoca le sessioni del profilo |
 | `POST` | `/profili/{slug}/recupero` | Rigenera il codice di recupero (visibile una volta) |
+| `GET` | `/profili/{slug}/limiti` | Controllo genitore del membro (proprio o, se `io`, di chiunque) |
+| `POST` | `/profili/{slug}/limiti` | Solo `io`: `{attivo, ora_inizio, ora_fine, messaggi_giorno, contenuti_bambino}` |
 
 ## Privacy
 
@@ -48,7 +50,8 @@ token o con token scaduto/revocato rispondono `401` con
 
 | Metodo | Percorso | Note |
 |---|---|---|
-| `POST` | `/chat` | `{msg, immagine_base64?, immagine_mime_type?}` |
+| `POST` | `/chat` | `{msg, immagine_base64?, immagine_mime_type?}`; 403 fuori orario o oltre il limite giornaliero del profilo bambino |
+| `GET` | `/chat/cronologia?q=&limite=` | Cronologia sincronizzata del profilo; `q` cerca nel testo |
 | `POST` | `/chat/trascrivi` | Audio base64 → testo (Gemini) |
 | `POST` | `/documenti/pdf` | Genera un PDF A4, restituisce base64 |
 
@@ -66,6 +69,8 @@ token o con token scaduto/revocato rispondono `401` con
 | `POST` | `/promemoria/{id}/programmato` | Conferma notifica locale pianificata |
 | `GET` | `/budget` | Totale e dettaglio per categoria |
 | `POST` | `/budget/spesa` | `{importo, categoria, descrizione}` |
+| `GET` | `/budget/report?mese=YYYY-MM` | Totale, confronto col mese precedente, soglie e avvisi di sforamento |
+| `POST` | `/budget/limiti` | Solo `io`: `{limiti: {"Cibo": 300, ...}}` (importi > 0) |
 
 ## Notifiche e impostazioni
 

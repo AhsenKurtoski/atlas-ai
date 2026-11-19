@@ -35,7 +35,7 @@ from slowapi.util import get_remote_address
 from starlette.concurrency import run_in_threadpool
 
 from app.ai_router import ai_router
-from app.core import auth_guard
+from app.core import auth_guard, parental
 from app.core.context import current_profile
 from app.core.database import (
     DEMO_PINS,
@@ -47,6 +47,7 @@ from app.core.database import (
     deactivate_push_token,
     fetch_profiles,
     get_budget_summary,
+    get_chat_history,
     get_dashboard,
     get_italian_leaderboard,
     get_italian_progress,
@@ -73,6 +74,7 @@ from app.core.logging_config import get_logger
 from app.core.schemas import (
     AddSpesaRequest,
     AddTodoRequest,
+    BudgetLimitsRequest,
     ChatRequest,
     ChatResponse,
     CreateProfileRequest,
@@ -80,6 +82,7 @@ from app.core.schemas import (
     HealthResponse,
     MeResponse,
     PinAuthRequest,
+    ParentalLimitsRequest,
     PinAuthResponse,
     PdfRequest,
     ProfileSummary,
@@ -113,7 +116,7 @@ from app.core.settings import (
     scheduler_enabled,
 )
 from app.notifiche import invia_a_profilo
-from app.services import privacy
+from app.services import budget_report, privacy
 from app.services.backup import backup_local_db
 from app.services.browser import browser_profile, shutdown_browser
 from app.services.pdf import build_pdf
@@ -281,6 +284,7 @@ def get_profili(request: Request) -> dict[str, ProfileSummary]:
             nome=profile.get("nome", ""),
             livello_italiano=profile.get("livello_italiano", "B1"),
             lingua_madre=profile.get("lingua_madre", "Italiano"),
+            tipo=str(profile.get("tipo") or "adulto"),
         )
         for slug, profile in fetch_profiles().items()
     }
@@ -588,6 +592,81 @@ def auth_me(
         lingua_madre=profilo.get("lingua_madre", "Italiano"),
         livello_italiano=profilo.get("livello_italiano", "B1"),
         expires_at=info[1] if info else None,
+        tipo=str(profilo.get("tipo") or "adulto"),
+        limiti=parental.limits_for(profilo),
+    )
+
+
+@app.get("/profili/{slug}/limiti", response_model=GenericResponse)
+@limiter.limit("60/minute")
+def leggi_limiti_profilo(
+    request: Request,
+    slug: str,
+    slug_autenticato: str = Depends(get_current_profile),
+) -> GenericResponse:
+    """Limiti del profilo: il proprio, oppure quelli di un membro se sei io."""
+    target = normalize_slug(slug)
+    if target != slug_autenticato and slug_autenticato != "io":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Puoi vedere solo i tuoi limiti.",
+        )
+    profilo = fetch_profiles().get(target)
+    if not profilo:
+        return GenericResponse(status="error", message="Profilo non trovato.")
+    return GenericResponse(
+        status="ok",
+        data={
+            "tipo": str(profilo.get("tipo") or "adulto"),
+            "limiti": parental.limits_for(profilo),
+        },
+    )
+
+
+@app.post("/profili/{slug}/limiti", response_model=GenericResponse)
+@limiter.limit("20/minute")
+def salva_limiti_profilo(
+    request: Request,
+    slug: str,
+    payload: ParentalLimitsRequest,
+    slug_autenticato: str = Depends(get_current_profile),
+) -> GenericResponse:
+    """Attiva/disattiva il controllo genitore per un profilo (solo amministratore)."""
+    if slug_autenticato != "io":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Solo il profilo amministratore può impostare i limiti.",
+        )
+    target = normalize_slug(slug)
+    profilo = fetch_profiles().get(target)
+    if not profilo:
+        return GenericResponse(status="error", message="Profilo non trovato.")
+    limiti = payload.model_dump()
+    upsert_profile(
+        slug=target,
+        nome=str(profilo.get("nome") or target),
+        lingua_madre=str(profilo.get("lingua_madre") or "Italiano"),
+        livello_italiano=str(profilo.get("livello_italiano") or "B1"),
+        tipo="bambino" if payload.attivo else "adulto",
+        limiti=limiti,
+    )
+    ip, device = _request_context(request)
+    auth_guard.record_event(target, "ok", "limiti_aggiornati", ip, device)
+    log.info("Limiti controllo genitore aggiornati per %s da %s", target, slug_autenticato)
+    return GenericResponse(
+        status="ok",
+        message=(
+            f"Controllo genitore attivo per {profilo.get('nome') or target}: "
+            f"{limiti['ora_inizio']}–{limiti['ora_fine']}"
+            + (
+                f", massimo {limiti['messaggi_giorno']} messaggi al giorno."
+                if limiti["messaggi_giorno"]
+                else ", messaggi illimitati."
+            )
+            if payload.attivo
+            else f"Controllo genitore disattivato per {profilo.get('nome') or target}."
+        ),
+        data={"tipo": "bambino" if payload.attivo else "adulto", "limiti": limiti},
     )
 
 
@@ -719,6 +798,13 @@ async def chat_endpoint(
     if profilo is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Profilo inesistente.")
 
+    # Controllo genitore: orari e limite giornaliero applicati dal server.
+    consentito, motivo = parental.check(profilo)
+    if not consentito:
+        ip, device = _request_context(request)
+        auth_guard.record_event(slug, "errore", "limite_genitore", ip, device)
+        raise HTTPException(status.HTTP_403_FORBIDDEN, motivo)
+
     immagine: tuple[bytes, str] | None = None
     if payload.immagine_base64:
         mime = (payload.immagine_mime_type or "image/jpeg").strip().lower()
@@ -758,12 +844,44 @@ async def chat_endpoint(
         current_profile.reset(profilo_tool)
         browser_profile.reset(profilo_browser)
     save_message(profile_slug=slug, role="ai", content=str(risposta))
+    parental.register_message(slug)
 
     if immagine:
         log.info("Chat con foto per %s: %d KB (%s)", slug, len(immagine[0]) // 1024, immagine[1])
     return ChatResponse(
         reply=str(risposta),
         latency_ms=round((time.perf_counter() - started) * 1000, 1),
+    )
+
+
+@app.get("/chat/cronologia", response_model=GenericResponse)
+@limiter.limit("60/minute")
+def chat_cronologia(
+    request: Request,
+    q: str = Query(default="", max_length=200),
+    limite: int = Query(default=50, ge=1, le=200),
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    """Cronologia della chat sincronizzata (stessa per tutti i dispositivi).
+
+    `q` cerca nel testo; senza `q` restituisce gli ultimi `limite` messaggi.
+    """
+    righe = get_chat_history(slug, limit=limite, query=q)
+    return GenericResponse(
+        status="ok",
+        data=[
+            {
+                "ruolo": row.get("role"),
+                "testo": row.get("content"),
+                "quando": row.get("created_at"),
+            }
+            for row in righe
+        ],
+        message=(
+            f"{len(righe)} messaggi trovati per '{q.strip()}'."
+            if q.strip()
+            else None
+        ),
     )
 
 
@@ -945,6 +1063,43 @@ def aggiungi_spesa(
     return GenericResponse(
         status="ok",
         message=esito if isinstance(esito, str) and esito != "ok" else "Spesa registrata.",
+    )
+
+
+# ---------------- Report budget ----------------
+@app.get("/budget/report", response_model=GenericResponse)
+@limiter.limit("60/minute")
+def budget_report_endpoint(
+    request: Request,
+    mese: str = Query(default="", max_length=7),
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    """Report mensile: totale, confronto col mese scorso, soglie e sforamenti."""
+    return GenericResponse(status="ok", data=budget_report.monthly_report(mese or None))
+
+
+@app.post("/budget/limiti", response_model=GenericResponse)
+@limiter.limit("20/minute")
+def budget_limiti(
+    request: Request,
+    payload: BudgetLimitsRequest,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    """Salva le soglie mensili per categoria (usato dagli avvisi di sforamento)."""
+    if slug != "io":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Solo l'amministratore può impostare i limiti di spesa.",
+        )
+    salvate = budget_report.save_limits(payload.limiti)
+    return GenericResponse(
+        status="ok",
+        message=(
+            f"Limiti salvati per {len(salvate)} categorie."
+            if salvate
+            else "Nessun limite valido: inserisci importi maggiori di zero."
+        ),
+        data=salvate,
     )
 
 

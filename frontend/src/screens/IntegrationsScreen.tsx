@@ -21,6 +21,7 @@ import apiService, {
   AccessLogRow,
   AppSettings,
   GoogleStatus,
+  ParentalLimits,
   PrivacyPolicy,
   ProfileRow,
   ReminderRow,
@@ -81,6 +82,16 @@ export default function IntegrationsScreen() {
   // Privacy: informativa e azioni sui propri dati.
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [policy, setPolicy] = useState<PrivacyPolicy | null>(null);
+
+  // Controllo genitore: limiti del membro selezionato.
+  const [limitsSlug, setLimitsSlug] = useState<string | null>(null);
+  const [limitsForm, setLimitsForm] = useState<ParentalLimits>({
+    attivo: true,
+    ora_inizio: '07:00',
+    ora_fine: '21:00',
+    messaggi_giorno: 0,
+    contenuti_bambino: true,
+  });
 
   const load = useCallback(async () => {
     const [settingsResult, googleResult, profilesResult, dashboardResult, remindersResult] = await Promise.allSettled([
@@ -368,6 +379,46 @@ export default function IntegrationsScreen() {
       );
     } catch (error: any) {
       Alert.alert('Errore', error?.message ?? 'Generazione non riuscita.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openLimits = async (slug: string) => {
+    setBusy(`limiti-${slug}`);
+    try {
+      const response = await apiService.getProfileLimits(slug);
+      if (response.data) {
+        setLimitsForm({
+          attivo: response.data.limiti.attivo,
+          ora_inizio: response.data.limiti.ora_inizio,
+          ora_fine: response.data.limiti.ora_fine,
+          messaggi_giorno: Number(response.data.limiti.messaggi_giorno) || 0,
+          contenuti_bambino: response.data.limiti.contenuti_bambino !== false,
+        });
+        setLimitsSlug(slug);
+      }
+    } catch (error: any) {
+      Alert.alert('Limiti non disponibili', error?.message ?? 'Riprova più tardi.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const saveLimits = async () => {
+    if (!limitsSlug) return;
+    setBusy('limiti');
+    try {
+      const response = await apiService.setProfileLimits(limitsSlug, limitsForm);
+      if (response.status !== 'ok') {
+        Alert.alert('Limiti non salvati', response.message ?? 'Controlla gli orari (HH:MM).');
+        return;
+      }
+      Alert.alert('Controllo genitore', response.message ?? 'Limiti salvati.');
+      setLimitsSlug(null);
+      await load();
+    } catch (error: any) {
+      Alert.alert('Errore', error?.message ?? 'Salvataggio non riuscito.');
     } finally {
       setBusy(null);
     }
@@ -806,16 +857,115 @@ export default function IntegrationsScreen() {
                   {rowData.lingua_madre ? ` · ${rowData.lingua_madre}` : ''}
                 </Text>
               </View>
-              {isAdmin && slug !== profileId && slug !== 'io' ? (
-                <TouchableOpacity
-                  onPress={() => deleteProfile(slug, rowData.nome)}
-                  className="bg-[#ef444420] px-3 py-2 rounded-xl"
-                >
-                  <Text className="text-[#fca5a5] font-bold text-sm">Elimina</Text>
-                </TouchableOpacity>
-              ) : null}
+              <View className="flex-row items-center">
+                {rowData.tipo === 'bambino' ? (
+                  <View className="bg-[#06b6d420] px-2 py-1 rounded-lg mr-2">
+                    <Text className="text-[#67e8f9] text-xs font-bold">Bambino</Text>
+                  </View>
+                ) : null}
+                {isAdmin && slug !== 'io' ? (
+                  <TouchableOpacity
+                    onPress={() => openLimits(slug)}
+                    disabled={busy === `limiti-${slug}`}
+                    className="bg-[#ffffff15] px-3 py-2 rounded-xl mr-2"
+                  >
+                    <Text className="text-white font-bold text-sm">
+                      {busy === `limiti-${slug}` ? '…' : 'Limiti'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+                {isAdmin && slug !== profileId && slug !== 'io' ? (
+                  <TouchableOpacity
+                    onPress={() => deleteProfile(slug, rowData.nome)}
+                    className="bg-[#ef444420] px-3 py-2 rounded-xl"
+                  >
+                    <Text className="text-[#fca5a5] font-bold text-sm">Elimina</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
             </View>
           ))}
+
+          {limitsSlug ? (
+            <View className="bg-[#ffffff08] p-4 rounded-2xl mt-3 border border-[#ffffff15]">
+              <View className="flex-row justify-between items-center mb-3">
+                <Text className="text-white font-bold text-lg">
+                  👶 Limiti · {profiles[limitsSlug]?.nome ?? limitsSlug}
+                </Text>
+                <TouchableOpacity onPress={() => setLimitsSlug(null)}>
+                  <Text className="text-[#8888a0]">✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View className="flex-row justify-between items-center mb-3">
+                <Text className="text-white">Controllo genitore attivo</Text>
+                <Switch
+                  value={limitsForm.attivo}
+                  onValueChange={(value) => setLimitsForm({ ...limitsForm, attivo: value })}
+                  trackColor={{ false: '#333', true: '#7c3aed' }}
+                  thumbColor="#fff"
+                />
+              </View>
+
+              <View className="flex-row mb-3">
+                <View className="flex-1 mr-2">
+                  <Text className="text-[#8888a0] text-xs mb-1">Dalle (HH:MM)</Text>
+                  <TextInput
+                    className="bg-[#ffffff10] text-white p-3 rounded-xl"
+                    value={limitsForm.ora_inizio}
+                    onChangeText={(value) => setLimitsForm({ ...limitsForm, ora_inizio: value })}
+                    placeholder="07:00"
+                    placeholderTextColor="#888"
+                  />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-[#8888a0] text-xs mb-1">Alle (HH:MM)</Text>
+                  <TextInput
+                    className="bg-[#ffffff10] text-white p-3 rounded-xl"
+                    value={limitsForm.ora_fine}
+                    onChangeText={(value) => setLimitsForm({ ...limitsForm, ora_fine: value })}
+                    placeholder="21:00"
+                    placeholderTextColor="#888"
+                  />
+                </View>
+              </View>
+
+              <Text className="text-[#8888a0] text-xs mb-1">Messaggi al giorno (0 = illimitati)</Text>
+              <TextInput
+                className="bg-[#ffffff10] text-white p-3 rounded-xl mb-3"
+                keyboardType="number-pad"
+                value={String(limitsForm.messaggi_giorno)}
+                onChangeText={(value) =>
+                  setLimitsForm({
+                    ...limitsForm,
+                    messaggi_giorno: Math.min(500, Number(value.replace(/[^0-9]/g, '')) || 0),
+                  })
+                }
+              />
+
+              <View className="flex-row justify-between items-center mb-4">
+                <Text className="text-white flex-1 pr-3">Contenuti adatti ai bambini</Text>
+                <Switch
+                  value={limitsForm.contenuti_bambino}
+                  onValueChange={(value) =>
+                    setLimitsForm({ ...limitsForm, contenuti_bambino: value })
+                  }
+                  trackColor={{ false: '#333', true: '#06b6d4' }}
+                  thumbColor="#fff"
+                />
+              </View>
+
+              <TouchableOpacity
+                onPress={saveLimits}
+                disabled={busy === 'limiti'}
+                className={`p-3 rounded-2xl items-center ${busy === 'limiti' ? 'bg-[#7c3aed80]' : 'bg-[#7c3aed]'}`}
+              >
+                <Text className="text-white font-black">
+                  {busy === 'limiti' ? 'Salvataggio...' : 'Salva limiti'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           {isAdmin ? (
             <>

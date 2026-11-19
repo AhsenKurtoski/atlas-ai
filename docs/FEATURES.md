@@ -11,9 +11,12 @@ risponde con un messaggio esplicito e non simula un successo.
 | Login PIN, sessione persistente, logout con revoca | ✅ | ✅ | ✅ | — |
 | Profili famiglia e isolamento chat per profilo | ✅ | ✅ | ✅ | — |
 | Cambio PIN dall'app (Impostazioni → Cambia PIN) con revoca sessioni | ✅ | ✅ | ✅ | profilo `io` |
+| **Controllo genitore**: orari, messaggi/giorno, tool per adulti bloccati | ✅ | ✅ | ✅ | profilo `io` |
+| **Cronologia chat sincronizzata** con ricerca su tutti i dispositivi | ✅ | ✅ | ✅ | backend |
 | Home con dashboard, budget, todo e promemoria | ✅ | ✅ | ✅ | backend |
 | Lista spesa condivisa (aggiungi/completa/elimina/pulisci) | ✅ | ✅ | ✅ | backend |
 | Budget per categoria e totale mese | ✅ | ✅ | ✅ | backend |
+| **Soglie di spesa** con avviso di sforamento e confronto col mese precedente | ✅ | ✅ | ✅ | profilo `io` |
 | Promemoria in linguaggio naturale + notifica locale | ✅ | ✅ | ✅ | permesso notifiche |
 | Notifiche push remote | ✅ con APNs | ✅ con FCM/EAS | — | EAS/APNs/FCM + device |
 | Lezioni e quiz di italiano con punti/streak | ✅ | ✅ | ✅ | backend |

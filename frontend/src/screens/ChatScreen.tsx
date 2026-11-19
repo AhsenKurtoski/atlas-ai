@@ -75,6 +75,12 @@ export default function ChatScreen({ route }: any) {
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
+  // Se l'utente ha già scritto, la cronologia del server non deve sovrascrivere.
+  const sentRef = useRef(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Array<{ ruolo: string; testo: string; quando?: string | null }>>([]);
+  const [searching, setSearching] = useState(false);
 
   // Cronologia locale per profilo.
   useEffect(() => {
@@ -100,6 +106,41 @@ export default function ChatScreen({ route }: any) {
     const persistibile = messages.map(({ imageUri, ...rest }) => rest);
     AsyncStorage.setItem(`@atlas/history/${profileId}`, JSON.stringify(persistibile)).catch(() => {});
   }, [messages, profileId]);
+
+  // Cronologia sincronizzata: la stessa su tutti i dispositivi (backend).
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const result = await apiService.getChatHistory(undefined, 40);
+        const rows = Array.isArray(result.data) ? result.data : [];
+        if (!active || !rows.length || sentRef.current) return;
+        setMessages([
+          WELCOME,
+          ...rows
+            .filter((row) => (row.testo || '').trim())
+            .map((row) => ({ role: row.ruolo === 'user' ? ('user' as const) : ('ai' as const), text: row.testo })),
+        ]);
+      } catch {
+        // Offline: resta la cronologia salvata sul dispositivo.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [profileId]);
+
+  const runSearch = async () => {
+    setSearching(true);
+    try {
+      const result = await apiService.getChatHistory(searchQuery, 50);
+      setSearchResults(Array.isArray(result.data) ? result.data : []);
+    } catch (error: any) {
+      Alert.alert('Ricerca non disponibile', error?.message ?? 'Riprova quando torni online.');
+    } finally {
+      setSearching(false);
+    }
+  };
 
   // Scenario precompilato (es. dalla schermata Italiano).
   useEffect(() => {
@@ -217,6 +258,7 @@ export default function ChatScreen({ route }: any) {
     const text = inputText.trim();
     const caption = text || (pendingImage ? 'Cosa vedi in questa foto?' : '');
     if ((!caption && !pendingImage) || isLoading) return;
+    sentRef.current = true;
     fireHaptic(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light));
     setMessages((previous) => [
       ...previous,
@@ -293,16 +335,78 @@ export default function ChatScreen({ route }: any) {
             <Text className="text-lg font-black text-white">🧠 ATLAS</Text>
             <Text className="text-[#7c3aed] text-xs font-bold uppercase">{(profileId || '').toUpperCase()}</Text>
           </View>
-          <TouchableOpacity
-            onPress={() => {
-              AsyncStorage.removeItem(`@atlas/history/${profileId}`).catch(() => {});
-              setMessages([WELCOME]);
-            }}
-            className="bg-[#ffffff10] p-2 rounded-xl"
-          >
-            <Text className="text-white text-sm">🗑️</Text>
-          </TouchableOpacity>
+          <View className="flex-row">
+            <TouchableOpacity
+              onPress={() => setSearchOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Cerca nella cronologia"
+              className="bg-[#ffffff10] p-2 rounded-xl mr-2"
+            >
+              <Text className="text-white text-sm">🔍</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => {
+                AsyncStorage.removeItem(`@atlas/history/${profileId}`).catch(() => {});
+                setMessages([WELCOME]);
+              }}
+              className="bg-[#ffffff10] p-2 rounded-xl"
+            >
+              <Text className="text-white text-sm">🗑️</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {searchOpen ? (
+          <View className="absolute inset-0 bg-[#0a0a0f] z-50 px-5 pt-5">
+            <View className="flex-row items-center mb-4">
+              <Text className="text-white text-xl font-black flex-1">🕘 Cronologia</Text>
+              <TouchableOpacity onPress={() => setSearchOpen(false)} className="bg-[#ffffff10] p-2 rounded-xl">
+                <Text className="text-white">✕</Text>
+              </TouchableOpacity>
+            </View>
+            <View className="flex-row items-center mb-4">
+              <TextInput
+                className="flex-1 bg-[#ffffff08] text-white px-4 py-3 rounded-2xl border border-[#ffffff10] mr-2"
+                placeholder="Cerca nelle conversazioni…"
+                placeholderTextColor="#8888a0"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onSubmitEditing={runSearch}
+                returnKeyType="search"
+              />
+              <TouchableOpacity onPress={runSearch} className="bg-[#7c3aed] px-4 py-3 rounded-2xl">
+                <Text className="text-white font-bold">{searching ? '…' : 'Cerca'}</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
+              {searchResults.length ? (
+                searchResults.map((row, index) => (
+                  <TouchableOpacity
+                    key={`${row.quando ?? index}-${index}`}
+                    onPress={() => {
+                      if (row.ruolo === 'user') setInputText(row.testo);
+                      setSearchOpen(false);
+                    }}
+                    className="bg-[#ffffff08] p-4 rounded-2xl mb-3 border border-[#ffffff10]"
+                  >
+                    <Text className="text-[#a78bfa] text-xs font-bold uppercase mb-1">
+                      {row.ruolo === 'user' ? 'Tu' : 'ATLAS'}
+                    </Text>
+                    <Text className="text-white" numberOfLines={4}>
+                      {row.testo}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <Text className="text-[#8888a0] mt-4">
+                  {searching
+                    ? 'Cerco…'
+                    : 'Scrivi una parola e premi Cerca: trovi i messaggi di tutti i tuoi dispositivi.'}
+                </Text>
+              )}
+            </ScrollView>
+          </View>
+        ) : null}
 
         <ScrollView
           ref={scrollViewRef}

@@ -65,6 +65,33 @@ class MeResponse(BaseModel):
     lingua_madre: str
     livello_italiano: str
     expires_at: Optional[int] = None
+    tipo: str = "adulto"
+    limiti: dict[str, Any] = {}
+
+
+class ParentalLimitsRequest(BaseModel):
+    """Limiti del profilo bambino (orari, messaggi al giorno, contenuti)."""
+
+    attivo: bool = True
+    ora_inizio: str = Field(default="07:00", max_length=5)
+    ora_fine: str = Field(default="21:00", max_length=5)
+    messaggi_giorno: int = Field(default=0, ge=0, le=500)
+    contenuti_bambino: bool = True
+
+    @field_validator("ora_inizio", "ora_fine")
+    @classmethod
+    def _valid_time(cls, value: str) -> str:
+        parts = value.strip().split(":")
+        if len(parts) != 2 or not all(part.isdigit() for part in parts):
+            raise ValueError("Usa il formato HH:MM")
+        ore, minuti = int(parts[0]), int(parts[1])
+        if not (0 <= ore <= 23 and 0 <= minuti <= 59):
+            raise ValueError("Orario non valido")
+        return f"{ore:02d}:{minuti:02d}"
+
+
+class BudgetLimitsRequest(BaseModel):
+    limiti: dict[str, float] = Field(default_factory=dict)
 
 
 # ---------------- Chat ----------------
@@ -101,6 +128,7 @@ class ProfileSummary(BaseModel):
     nome: str
     livello_italiano: str
     lingua_madre: str = "Italiano"
+    tipo: str = "adulto"
 
 
 class CreateProfileRequest(BaseModel):

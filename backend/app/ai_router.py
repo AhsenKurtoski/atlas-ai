@@ -20,6 +20,7 @@ from google import genai
 
 from app.core.logging_config import get_logger
 from app.core.settings import agent_max_tool_turns, gemini_api_keys, gemini_model, scheduler_timezone
+from app.core.parental import blocked_tools_for, is_child
 from app.tools.registry import ATLAS_TOOLS
 
 log = get_logger(__name__)
@@ -128,6 +129,15 @@ class GeminiRouter:
             "13. Se il browser non è installato o una pagina blocca l'accesso, riporta\n"
             "    l'errore reale e proponi un'alternativa: non simulare di aver navigato.\n"
             f"{memoria_hint}"
+            + (
+                "\nPROFILO BAMBINO:\n"
+                "- Rispondi con parole semplici e adatte a un bambino; niente contenuti violenti,\n"
+                "  sessuali, spaventosi o adatti solo agli adulti. Se una richiesta non è\n"
+                "  adatta, spiega gentilmente che serve un adulto.\n"
+                "- Non parlare di soldi di famiglia, crypto, investimenti o email personali.\n"
+                if is_child(profilo)
+                else ""
+            )
         )
 
     # ---------- Invocazione tool ----------
@@ -202,11 +212,18 @@ class GeminiRouter:
             if client is None:
                 return "Client AI non disponibile. Controlla le chiavi Gemini nel file .env."
             try:
+                bloccati = blocked_tools_for(profilo_utente)
+                tools_consentiti = [
+                    tool
+                    for tool in ATLAS_TOOLS
+                    if tool.__name__ not in bloccati
+                    and not (bloccati and tool.__name__.startswith("browser_"))
+                ]
                 chat = client.chats.create(
                     model=model,
                     config=genai.types.GenerateContentConfig(
                         system_instruction=system_prompt,
-                        tools=ATLAS_TOOLS,
+                        tools=tools_consentiti,
                         temperature=0.6,
                         # Il loop qui sotto esegue i tool e registra ogni chiamata.
                         # L'AFC automatico del SDK li eseguiva fuori dal nostro controllo.

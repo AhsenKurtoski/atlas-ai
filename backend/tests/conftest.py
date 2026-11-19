@@ -108,7 +108,31 @@ def _reset_rate_limiter(_limiter):
 @pytest.fixture(autouse=True)
 def _reset_auth_guard(_isolated_db):
     """Blocco progressivo e registro accessi ripartono puliti per ogni test."""
-    from app.core import auth_guard
+    from app.core import auth_guard, parental
 
     auth_guard.reset_all()
+    parental.reset_usage()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _restore_profiles(_isolated_db):
+    """Ogni test parte dai soli profili demo.
+
+    Senza questo, i profili creati dai test si accumulano nella sessione e
+    fanno scattare il limite di 15 membri (fallimenti solo con la suite intera).
+    """
+    from app.core import database
+
+    path = database._fallback_path("profiles")
+    snapshot = None
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as handle:
+            snapshot = handle.read()
+    yield
+    if snapshot is None:
+        if os.path.exists(path):
+            os.remove(path)
+    else:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(snapshot)

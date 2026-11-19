@@ -708,6 +708,8 @@ def fetch_profiles() -> dict[str, dict]:
             "pin_version": row.get("pin_version") or 0,
             "recovery_hash": row.get("recovery_hash"),
             "recovery_created_at": row.get("recovery_created_at"),
+            "tipo": row.get("tipo") or "adulto",
+            "limiti": row.get("limiti") or {},
         }
     return profiles or _local_profiles()
 
@@ -725,6 +727,8 @@ def upsert_profile(
     pin_hash: Optional[str] = None,
     pin_version: Optional[int] = None,
     recovery_hash: Optional[str] = None,
+    tipo: Optional[str] = None,
+    limiti: Optional[dict] = None,
 ) -> dict | None:
     """Crea o aggiorna un profilo famiglia.
 
@@ -747,6 +751,10 @@ def upsert_profile(
     if recovery_hash is not None:
         data["recovery_hash"] = recovery_hash or None
         data["recovery_created_at"] = _now_iso() if recovery_hash else None
+    if tipo:
+        data["tipo"] = tipo
+    if limiti is not None:
+        data["limiti"] = limiti
     client.table("profiles").upsert(data, on_conflict="slug").execute()
     log.info("Profilo salvato: %s (%s)", slug, nome)
     return data
@@ -760,6 +768,8 @@ def _fb_upsert_profile(
     pin_hash: Optional[str] = None,
     pin_version: Optional[int] = None,
     recovery_hash: Optional[str] = None,
+    tipo: Optional[str] = None,
+    limiti: Optional[dict] = None,
 ) -> dict:
     profiles = _local_profiles()
     existing = profiles.get(slug, {})
@@ -778,6 +788,8 @@ def _fb_upsert_profile(
             if recovery_hash is None
             else (_now_iso() if recovery_hash else None)
         ),
+        "tipo": tipo or existing.get("tipo") or "adulto",
+        "limiti": (limiti if limiti is not None else existing.get("limiti")) or {},
     }
     profiles[slug] = profile
     _local_profiles_write(profiles)
@@ -1179,6 +1191,44 @@ def get_italian_leaderboard() -> list[dict]:
 
 def _fb_get_italian_leaderboard() -> list[dict]:
     return _build_leaderboard(_fallback_read("italian_progress", []))
+
+
+# ====================================================================
+#  CRONOLOGIA CHAT (sincronizzata tra dispositivi + ricerca)
+# ====================================================================
+@resilient(fallback_return=[])
+def get_chat_history(profile_slug: str, limit: int = 50, query: str = "") -> list[dict]:
+    """Ultimi messaggi del profilo, in ordine cronologico, filtrabili per testo."""
+    client = get_client()
+    if client is None:
+        return _fb_get_chat_history(profile_slug, limit, query)
+    richiesta = (
+        client.table("messages")
+        .select("role,content,created_at")
+        .eq("profile_slug", profile_slug)
+    )
+    if query.strip():
+        richiesta = richiesta.ilike("content", f"%{query.strip()}%")
+    response = richiesta.order("created_at", desc=True).limit(max(1, min(int(limit), 200))).execute()
+    rows = list(response.data or [])
+    return list(reversed(rows))
+
+
+def _fb_get_chat_history(profile_slug: str, limit: int = 50, query: str = "") -> list[dict]:
+    rows = [
+        row
+        for row in _fallback_read("messages", [])
+        if row.get("profile_slug") == profile_slug
+    ]
+    needle = (query or "").strip().lower()
+    if needle:
+        rows = [row for row in rows if needle in str(row.get("content") or "").lower()]
+    return rows[-max(1, min(int(limit), 200)):]
+
+
+def get_expense_rows() -> list[dict]:
+    """Tutte le spese (usato dal report mensile del budget)."""
+    return _expense_rows()
 
 
 # ====================================================================

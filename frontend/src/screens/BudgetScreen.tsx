@@ -3,7 +3,7 @@ import { View, Text, ScrollView, SafeAreaView, TextInput, TouchableOpacity, Aler
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from '@react-navigation/native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
-import apiService, { BudgetData } from '../services/api';
+import apiService, { BudgetData, BudgetReport } from '../services/api';
 import { useAuth } from '../../App';
 
 const CATEGORIES = ['🍕 Cibo', '🚗 Trasporti', '⚡ Bollette', '💊 Salute', '📚 Istruzione', '🎮 Svago', 'Altro'];
@@ -24,18 +24,34 @@ export default function BudgetScreen({ route }: any) {
   const [budget, setBudget] = useState<BudgetData>({ totale: 0, dettaglio: [] });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [report, setReport] = useState<BudgetReport | null>(null);
+  const [limitDrafts, setLimitDrafts] = useState<Record<string, string>>({});
+  const [savingLimits, setSavingLimits] = useState(false);
 
   const loadBudget = useCallback(async () => {
+    const [budgetResult, reportResult] = await Promise.allSettled([
+      apiService.getBudget(),
+      apiService.getBudgetReport(),
+    ]);
     try {
-      const result = await apiService.getBudget();
-      const data = result.data;
-      if (data && Array.isArray(data.dettaglio)) {
-        setBudget({ totale: Number(data.totale) || 0, dettaglio: data.dettaglio });
-      } else {
-        setBudget({ totale: 0, dettaglio: [] });
+      if (budgetResult.status === 'fulfilled') {
+        const data = budgetResult.value.data;
+        if (data && Array.isArray(data.dettaglio)) {
+          setBudget({ totale: Number(data.totale) || 0, dettaglio: data.dettaglio });
+        } else {
+          setBudget({ totale: 0, dettaglio: [] });
+        }
       }
-    } catch {
-      // Offline: manteniamo i dati già mostrati.
+      if (reportResult.status === 'fulfilled' && reportResult.value.data) {
+        const nuovoReport = reportResult.value.data;
+        setReport(nuovoReport);
+        setLimitDrafts((previous) => {
+          if (Object.keys(previous).length) return previous;
+          return Object.fromEntries(
+            Object.entries(nuovoReport.soglie ?? {}).map(([category, value]) => [category, String(value)])
+          );
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -54,6 +70,24 @@ export default function BudgetScreen({ route }: any) {
   }, {});
 
   const totale = budget.totale || Object.values(totali).reduce((sum, value) => sum + value, 0);
+
+  const saveLimits = async () => {
+    const limiti: Record<string, number> = {};
+    Object.entries(limitDrafts).forEach(([category, value]) => {
+      const parsed = parseFloat(String(value).replace(',', '.'));
+      if (parsed > 0) limiti[category] = parsed;
+    });
+    setSavingLimits(true);
+    try {
+      await apiService.setBudgetLimits(limiti);
+      await loadBudget();
+      Alert.alert('Limiti salvati', `${Object.keys(limiti).length} categorie con un limite mensile.`);
+    } catch (error: any) {
+      Alert.alert('Limiti non salvati', error?.message ?? 'Riprova tra poco.');
+    } finally {
+      setSavingLimits(false);
+    }
+  };
 
   const saveSpesa = async () => {
     const parsed = parseFloat(importo.replace(',', '.'));
@@ -119,6 +153,64 @@ export default function BudgetScreen({ route }: any) {
           {!Object.keys(totali).length ? (
             <Text className="text-[#8888a0]">Nessuna spesa registrata. Inizia qui sotto ⬇️</Text>
           ) : null}
+        </View>
+
+        {report?.avvisi?.length ? (
+          <View className="bg-[#ef444415] border border-[#ef444440] p-5 rounded-[28px] mb-6">
+            <Text className="text-[#fca5a5] font-bold text-lg mb-2">⚠️ Limiti superati</Text>
+            {report.avvisi.map((avviso) => (
+              <Text key={avviso} className="text-[#fca5a5] text-sm mb-1">
+                • {avviso}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+
+        <View className="bg-[#ffffff08] p-5 rounded-[28px] mb-6">
+          <Text className="text-white font-bold text-lg mb-1">🎯 Soglie mensili</Text>
+          <Text className="text-[#8888a0] text-sm mb-4">
+            {report
+              ? `Mese ${report.mese} · €${formatEuro(report.totale)}` +
+                (report.mese_precedente.totale
+                  ? ` · mese scorso €${formatEuro(report.mese_precedente.totale)}`
+                  : '')
+              : 'Imposta un limite per categoria: ATLAS avvisa quando lo superi.'}
+          </Text>
+
+          {(report?.dettaglio?.length ? report.dettaglio.map((row) => row.categoria) : Object.keys(limitDrafts)).map(
+            (category) => {
+              const soglia = report?.soglie?.[category];
+              const sforato = Boolean(report?.dettaglio?.find((row) => row.categoria === category)?.sforato);
+              return (
+                <View key={category} className="flex-row items-center mb-3">
+                  <Text className={`flex-1 ${sforato ? 'text-[#fca5a5]' : 'text-white'}`}>
+                    {category}
+                    {soglia ? ` · limite €${formatEuro(soglia)}` : ''}
+                  </Text>
+                  <TextInput
+                    className="bg-[#ffffff10] text-white px-3 py-2 rounded-xl w-28 text-right"
+                    placeholder="nessuno"
+                    placeholderTextColor="#888"
+                    keyboardType="decimal-pad"
+                    value={limitDrafts[category] ?? ''}
+                    onChangeText={(value) =>
+                      setLimitDrafts((previous) => ({ ...previous, [category]: value }))
+                    }
+                  />
+                </View>
+              );
+            }
+          )}
+
+          <TouchableOpacity
+            onPress={saveLimits}
+            disabled={savingLimits}
+            className={`p-3 rounded-2xl items-center mt-2 ${savingLimits ? 'bg-[#7c3aed80]' : 'bg-[#7c3aed]'}`}
+          >
+            <Text className="text-white font-black">
+              {savingLimits ? 'Salvataggio...' : 'Salva soglie'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <View className="bg-[#ffffff08] p-5 rounded-[28px] mb-10">

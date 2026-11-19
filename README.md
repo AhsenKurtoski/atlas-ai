@@ -101,7 +101,7 @@ te lo dice esplicitamente invece di fingere che sia tutto attivo.
 ┌──────────────────────────────┐      HTTP / JSON       ┌─────────────────────────────────────────┐
 │   APP MOBILE                 │ ─────────────────────▶ │  BACKEND FASTAPI (Python 3.11-3.13)     │
 │   React Native · Expo 51     │  Bearer token firmato  │                                         │
-│   NativeWind / Tailwind      │ ◀───────────────────── │  - 45 endpoint REST                     │
+│   NativeWind / Tailwind      │ ◀───────────────────── │  - 50 endpoint REST                     │
 │   AsyncStorage (persistenza) │   Chat + Pin + Push    │  - 50 tool reali per Gemini             │
 │   React Navigation 6         │                        │  - 10 tool browser (Chromium headless)  │
 │   expo-notifications         │                        │  - Auth PIN bcrypt + token HMAC 8h      │
@@ -233,6 +233,7 @@ Expo Go, poi `10.0.2.2` su emulatore Android, poi `localhost`.
 | **Codice di recupero personale** (16 caratteri, hash bcrypt, monouso): ogni membro reimposta il PIN da solo, senza l'amministratore | ✅ |
 | **Blocco progressivo** dopo PIN errati: 5 → 1 min, 6 → 2 min, 7 → 5 min, 8+ → 15 min; un accesso riuscito azzera il contatore | ✅ |
 | **Registro accessi** (chi, quando, IP, dispositivo) consultabile da Impostazioni → Sicurezza | ✅ |
+| **Controllo genitore** applicato dal backend: fascia oraria, messaggi al giorno, tool "da adulti" nascosti al modello per i profili bambino | ✅ |
 | **Esci da tutti i dispositivi**: `POST /auth/logout-tutti` avanza `pin_version` e invalida ogni token del profilo | ✅ |
 | **Blocco automatico** dell'app dopo 5 minuti di inattività o al ritorno dal background (PIN richiesto) | ✅ |
 | **Backup cifrati** (AES/Fernet) di `_local_db` all'avvio e ogni 6 ore, ultimi 14 archivi in `backend/_backups` | ✅ |
@@ -274,12 +275,14 @@ dell'app come testo); le email vengono lette solo se colleghi Gmail.
 |---|---|---|
 | Login PIN + sessione persistente + logout | ✅ reale | — |
 | Chat AI + memoria conversazionale | ✅ reale | `GOOGLE_API_KEY_1` (Gemini free tier) |
+| **Cronologia chat sincronizzata** con ricerca (stessa su iPhone, Android e web) | ✅ reale | — |
 | **Foto dalla galleria in chat** (analisi e OCR) | ✅ reale | `GOOGLE_API_KEY_1` (Gemini vision) |
 | Dettatura vocale in chat | ✅ reale | `GOOGLE_API_KEY_1` (Gemini trascrive l'audio) |
 | **Agente browser** (apre siti, clicca, compila, legge JS) | ✅ reale | Chromium (`playwright install chromium`) |
 | **Promemoria intelligenti** creati in chat ("verso le 4-5 devo andare da Lidl") | ✅ reale | notifiche locali attive |
 | **Lista spesa condivisa** con aggiunta, completamento, eliminazione e pulizia | ✅ reale | — |
 | Budget per categoria + totale mese | ✅ reale | — |
+| **Soglie di spesa mensili** con avviso di sforamento e variazione sul mese precedente | ✅ reale | profilo `io` |
 | PDF A4 con condivisione iOS/Android e download web | ✅ reale | — |
 | Dashboard con KPI reali | ✅ reale | — |
 | Notifiche locali programmate (acqua, lezione, …) | ✅ reale | — |
@@ -378,7 +381,7 @@ atlas-ai/
 - **CI**: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) esegue `pytest` e `tsc --noEmit`; [`e2e.yml`](.github/workflows/e2e.yml) esegue gli smoke test Playwright; [`ios-build.yml`](.github/workflows/ios-build.yml) compila l'app iOS per simulatore.
 - **Nessun segreto nel repo**: `.env` e `_local_db/` sono ignorati; usa `.env.example` come modello.
 - **Architettura e flussi**: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-- **Riferimento API** (45 endpoint, esempi curl): [`docs/API.md`](docs/API.md).
+- **Riferimento API** (50 endpoint, esempi curl): [`docs/API.md`](docs/API.md).
 - **Privacy e tempi di conservazione**: [`docs/PRIVACY.md`](docs/PRIVACY.md).
 - **Changelog**: [`CHANGELOG.md`](CHANGELOG.md).
 - **Agente browser**: architettura, tool e limiti in [`docs/BROWSER.md`](docs/BROWSER.md).

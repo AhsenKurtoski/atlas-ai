@@ -82,6 +82,40 @@ export interface ProfileRow {
   nome: string;
   livello_italiano: string;
   lingua_madre?: string;
+  tipo?: string;
+}
+
+export interface ParentalLimits {
+  attivo: boolean;
+  ora_inizio: string;
+  ora_fine: string;
+  messaggi_giorno: number;
+  contenuti_bambino: boolean;
+}
+
+export interface ChatHistoryRow {
+  ruolo: 'user' | 'ai';
+  testo: string;
+  quando?: string | null;
+}
+
+export interface BudgetReportRow {
+  categoria: string;
+  importo: number;
+  limite: number | null;
+  percentuale_limite: number | null;
+  sforato: boolean;
+  mese_precedente: number;
+}
+
+export interface BudgetReport {
+  mese: string;
+  totale: number;
+  dettaglio: BudgetReportRow[];
+  soglie: Record<string, number>;
+  avvisi: string[];
+  mese_precedente: { mese: string; totale: number };
+  variazione_percentuale: number | null;
 }
 
 export interface AccessLogRow {
@@ -355,6 +389,32 @@ class ApiService {
       },
       { token, timeoutMs: 120000 }
     );
+  }
+
+  /** Cronologia chat sincronizzata (stessa per tutti i dispositivi). */
+  async getChatHistory(query?: string, limite = 50): Promise<GenericResult<ChatHistoryRow[]>> {
+    const params = new URLSearchParams({ limite: String(limite) });
+    if (query?.trim()) params.set('q', query.trim());
+    return this._request('GET', `/chat/cronologia?${params.toString()}`);
+  }
+
+  // ---------------- Controllo genitore ----------------
+  async getProfileLimits(slug: string): Promise<GenericResult<{ tipo: string; limiti: ParentalLimits }>> {
+    return this._request('GET', `/profili/${encodeURIComponent(slug)}/limiti`);
+  }
+
+  async setProfileLimits(slug: string, limiti: ParentalLimits): Promise<GenericResult> {
+    return this._request('POST', `/profili/${encodeURIComponent(slug)}/limiti`, limiti);
+  }
+
+  // ---------------- Report budget ----------------
+  async getBudgetReport(mese?: string): Promise<GenericResult<BudgetReport>> {
+    const query = mese ? `?mese=${encodeURIComponent(mese)}` : '';
+    return this._request('GET', `/budget/report${query}`);
+  }
+
+  async setBudgetLimits(limiti: Record<string, number>): Promise<GenericResult<Record<string, number>>> {
+    return this._request('POST', '/budget/limiti', { limiti });
   }
 
   async transcribeAudio(audioBase64: string, mimeType = 'audio/mp4'): Promise<{ testo: string }> {
