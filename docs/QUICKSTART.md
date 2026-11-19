@@ -82,7 +82,15 @@ cd frontend && npm run typecheck    # 0 errori
 cd backend && uvicorn main:app --port 8010
 cd frontend
 EXPO_PUBLIC_API_URL=http://localhost:8010 npm run export:web
-npx serve@14 dist -l 19007
+```
+
+Poi servi l'export statico:
+
+```bash
+# Windows: serve frontend/dist su :19007 (idempotente, log in backend/logs)
+start-web-19007.bat
+# macOS / Linux
+cd frontend/dist && python3 -m http.server 19007
 ```
 
 Apri `http://localhost:19007`. La web app usa lo stesso codice React Native.

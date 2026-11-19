@@ -100,7 +100,12 @@ from app.core.security import (
     token_ttl_seconds,
     verify_pin,
 )
-from app.core.settings import cors_origins, is_production, scheduler_enabled
+from app.core.settings import (
+    cors_origin_regex,
+    cors_origins,
+    is_production,
+    scheduler_enabled,
+)
 from app.notifiche import invia_a_profilo
 from app.services.backup import backup_local_db
 from app.services.browser import browser_profile, shutdown_browser
@@ -192,6 +197,8 @@ _ORIGINS = cors_origins()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ORIGINS,
+    # Origini con IP variabile (preview web in LAN): vedi app/core/settings.py.
+    allow_origin_regex=cors_origin_regex(),
     allow_credentials="*" not in _ORIGINS,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "Accept"],

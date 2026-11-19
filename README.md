@@ -168,6 +168,7 @@ eas build --profile development --platform android
 | `ATLAS_SECRET_KEY` | Segreto firma token (generato se assente) | auto |
 | `TOKEN_TTL_HOURS` | Durata sessione | `8` |
 | `CORS_ALLOWED_ORIGINS` | Origini per la preview web | `*` |
+| `CORS_ALLOWED_ORIGIN_REGEX` | Origini con IP variabile (web app in LAN) | loopback + IP privati su `:19007` |
 | `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` | Database remoto (alias `SUPABASE_SERVICE_ROLE_KEY`) | *(vuoto = locale)* |
 | `GOOGLE_API_KEY_1..3` | Chiavi Gemini (rotazione + fallback quota) | *(vuoto = no LLM)* |
 | `GEMINI_MODEL` | Modello Gemini | `gemini-3.5-flash-lite` |

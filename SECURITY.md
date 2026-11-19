@@ -40,6 +40,9 @@ ATLAS è pensato per **una famiglia su un'istanza privata**, non come SaaS multi
    in fase di cambio PIN, anche se un backup vecchio li reintroduce.
 4. `CORS_ALLOWED_ORIGINS` impostato esplicitamente: in produzione, senza questa
    variabile, il CORS è **chiuso** (nessuna origine web). In sviluppo resta `*`.
+   La web app servita dal PC in LAN passa dal default `PREVIEW_WEB_ORIGIN_REGEX`
+   (solo loopback, reti private e nomi locali su `:19007`); `CORS_ALLOWED_ORIGIN_REGEX`
+   lo sostituisce con un pattern esplicito (es. il dominio pubblico della web app).
 5. HTTPS obbligatorio davanti al backend (reverse proxy) e `--proxy-headers` per l'IP reale.
 6. `SCHEDULER_ENABLED=true` su **un solo processo** per host: il lock su file impedisce ai worker di duplicare i job, ma su più host serve un processo dedicato.
 7. Rate limiter su Redis (`storage_uri`) se usi più processi e vuoi limiti condivisi.

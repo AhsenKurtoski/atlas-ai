@@ -93,6 +93,29 @@ def cors_origins() -> list[str]:
     return parts
 
 
+# Origini della web app servita dal PC (`start-web-19007.bat`): l'IP della LAN
+# cambia con DHCP o Wi-Fi e l'origine della pagina cambia con lui. Copre
+# loopback, reti private e nomi locali, solo sulla porta della preview.
+PREVIEW_WEB_ORIGIN_REGEX = (
+    r"^http://(localhost|127\.0\.0\.1|\[::1\]"
+    r"|10\.\d{1,3}(\.\d{1,3}){2}"
+    r"|192\.168(\.\d{1,3}){2}"
+    r"|172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}"
+    # Nome macchina senza dominio (DESKTOP-ABC) o mDNS (mio-pc.local).
+    r"|[A-Za-z0-9][A-Za-z0-9-]*(\.local)?)"
+    r":19007$"
+)
+
+
+def cors_origin_regex() -> str:
+    """Regex delle origini che cambiano indirizzo (default: preview web in LAN).
+
+    `CORS_ALLOWED_ORIGIN_REGEX` la sostituisce se serve un pattern diverso; il
+    default evita di riscrivere `.env` ogni volta che il PC prende un IP nuovo.
+    """
+    return env("CORS_ALLOWED_ORIGIN_REGEX", "CORS_ORIGINS_REGEX") or PREVIEW_WEB_ORIGIN_REGEX
+
+
 def supabase_config() -> tuple[str, str]:
     url = env("SUPABASE_URL")
     key = env("SUPABASE_SERVICE_KEY", "SUPABASE_SERVICE_ROLE_KEY")

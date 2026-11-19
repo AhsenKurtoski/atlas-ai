@@ -3,6 +3,29 @@
 ATLAS AI usa Expo SDK 51 e React Native 0.74. La stessa codebase gira su iPhone,
 iPad, Android e web. Questa pagina spiega cosa funziona davvero e come installarla.
 
+## Web app su iPhone, gratis e senza Expo Go
+
+Expo Go degli store non apre un progetto SDK 51; l'app però gira nel browser
+sullo stesso codice React Native, quindi si può usare senza firma Apple.
+
+```bash
+cd frontend
+npm run export:web        # genera frontend/dist
+cd ..
+start-web-19007.bat       # Windows: serve dist su :19007 (idempotente)
+```
+
+Sul telefono, sulla stessa Wi-Fi del PC: `http://<IP-del-PC>:19007` in Safari →
+**Condividi → Aggiungi a Home**. L'IP si legge con `ipconfig` (Windows).
+
+- Il PC deve restare acceso; all'accesso a Windows la voce in `Startup` avvia
+  backend e server web (porta 19007).
+- La porta 19007 deve essere aperta nel firewall in ingresso (`ATLAS AI web 19007`).
+- Il CORS accetta ogni origine privata su `:19007` (`CORS_ALLOWED_ORIGIN_REGEX`),
+  quindi se il PC cambia IP l'app continua a funzionare.
+- Da una rete esterna (LTE) serve un hosting HTTPS della web app: vedi
+  [DEPLOY_FREE.md](DEPLOY_FREE.md).
+
 ## Cosa fa la CI iOS
 
 Workflow: [`.github/workflows/ios-build.yml`](../.github/workflows/ios-build.yml)

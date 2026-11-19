@@ -14,6 +14,7 @@ viene simulato con monkeypatch, mai toccando i dati reali.
 from __future__ import annotations
 
 import json
+import re
 import zipfile
 
 import pytest
@@ -201,3 +202,53 @@ class TestCors:
         monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
         monkeypatch.delenv("CORS_ORIGINS", raising=False)
         assert settings.cors_origins() == ["*"]
+
+    def test_regex_copre_le_reti_private(self):
+        pattern = settings.cors_origin_regex()
+        assert pattern == settings.PREVIEW_WEB_ORIGIN_REGEX
+        for origine in (
+            "http://localhost:19007",
+            "http://127.0.0.1:19007",
+            "http://10.1.2.3:19007",
+            "http://192.168.1.50:19007",
+            "http://172.20.10.2:19007",
+            "http://mio-pc.local:19007",
+            "http://DESKTOP-ABC:19007",
+        ):
+            assert re.fullmatch(pattern, origine), origine
+
+    def test_regex_rifiuta_origini_esterne(self):
+        pattern = settings.cors_origin_regex()
+        for origine in (
+            "https://evil.example",
+            "http://evil.example:19007",
+            "http://10.1.2.3:9999",
+            "https://10.1.2.3:19007",
+            "http://10.1.2.3:19007/",
+            "http://evil.co.uk:19007",
+        ):
+            assert re.fullmatch(pattern, origine) is None, origine
+
+    def test_regex_personalizzata_da_env(self, monkeypatch):
+        monkeypatch.setenv("CORS_ALLOWED_ORIGIN_REGEX", r"^https://app\.example$")
+        assert settings.cors_origin_regex() == r"^https://app\.example$"
+
+    def test_regex_vuota_usa_il_default(self, monkeypatch):
+        monkeypatch.setenv("CORS_ALLOWED_ORIGIN_REGEX", "   ")
+        assert settings.cors_origin_regex() == settings.PREVIEW_WEB_ORIGIN_REGEX
+
+    def test_preflight_accetta_un_ip_lan(self, client):
+        origine = "http://192.168.1.50:19007"
+        risposta = client.options(
+            "/auth/pin",
+            headers={"Origin": origine, "Access-Control-Request-Method": "POST"},
+        )
+        assert risposta.status_code == 200
+        assert risposta.headers.get("access-control-allow-origin") == origine
+
+    def test_preflight_rifiuta_origine_esterna(self, client):
+        risposta = client.options(
+            "/auth/pin",
+            headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"},
+        )
+        assert "access-control-allow-origin" not in risposta.headers
