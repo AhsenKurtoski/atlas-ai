@@ -24,6 +24,8 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - name: Installa dipendenze
         run: pip install -r requirements.txt
+      - name: Controlla le dipendenze
+        run: python -m pip check
       - name: Installa Chromium per l'agente browser
         run: python -m playwright install --with-deps chromium
       - name: Test
@@ -48,3 +50,5 @@ jobs:
         run: npm ci
       - name: Typecheck
         run: npx tsc --noEmit
+      - name: Build web (export statico)
+        run: npm run export:web

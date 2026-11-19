@@ -153,7 +153,8 @@ class TestPinAdmin:
 
 # ----------------------------------------------------------------------- backup
 class TestBackupLocale:
-    def test_crea_zip_con_i_dati(self, tmp_path):
+    def test_crea_archivio_cifrato_con_i_dati(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ATLAS_BACKUP_PASSWORD", "password-di-test")
         sorgente = tmp_path / "_local_db"
         sorgente.mkdir()
         (sorgente / "profiles.json").write_text("{}", encoding="utf-8")
@@ -162,21 +163,27 @@ class TestBackupLocale:
 
         archivio = backup.backup_local_db(source=sorgente, keep=3)
         assert archivio is not None and archivio.exists()
-        with zipfile.ZipFile(archivio) as zf:
+        assert archivio.name.endswith(".zip.enc")
+        # I dati non sono leggibili senza la chiave…
+        with pytest.raises(zipfile.BadZipFile):
+            zipfile.ZipFile(archivio)
+
+        # …ma con la chiave il contenuto è completo e senza segreti di firma.
+        with zipfile.ZipFile(backup.decrypt_backup(archivio)) as zf:
             nomi = zf.namelist()
         assert "profiles.json" in nomi
         assert ".scheduler.lock" not in nomi
-        # Il segreto di firma non deve uscire dal server con i backup.
         assert ".atlas_secret" not in nomi
 
-    def test_rotazione_mantiene_gli_ultimi(self, tmp_path):
+    def test_rotazione_mantiene_gli_ultimi(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ATLAS_BACKUP_PASSWORD", "password-di-test")
         sorgente = tmp_path / "_local_db"
         sorgente.mkdir()
         (sorgente / "profiles.json").write_text("{}", encoding="utf-8")
         for _ in range(5):
             assert backup.backup_local_db(source=sorgente, keep=2) is not None
 
-        archivi = list((tmp_path / "_backups").glob("atlas-local-db-*.zip"))
+        archivi = list((tmp_path / "_backups").glob("atlas-local-db-*.zip.enc"))
         assert len(archivi) == 2
         assert len(backup.list_backups(source=sorgente)) == 2
 

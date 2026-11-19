@@ -10,10 +10,21 @@ import {
   Alert,
   Linking,
   ActivityIndicator,
+  Share,
+  Platform,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import apiService, { AppSettings, GoogleStatus, ProfileRow, ReminderRow } from '../services/api';
+import apiService, {
+  AccessLogRow,
+  AppSettings,
+  GoogleStatus,
+  PrivacyPolicy,
+  ProfileRow,
+  ReminderRow,
+} from '../services/api';
 import {
   registerPushToken,
   unregisterPushToken,
@@ -27,6 +38,20 @@ import { useAuth } from '../../App';
 import CONFIG from '../config';
 
 const LIVELLI = ['A1', 'A2', 'B1', 'B2', 'C1'];
+
+const MOTIVI_ACCESSO: Record<string, string> = {
+  pin: 'Accesso con PIN',
+  pin_errato: 'PIN errato',
+  pin_bloccato: 'Tentativo durante il blocco',
+  profilo_sconosciuto: 'Profilo sconosciuto',
+  recupero: 'Accesso con codice di recupero',
+  recupero_errato: 'Codice di recupero errato',
+  recupero_senza_codice: 'Recupero senza codice attivo',
+  recupero_generato: 'Codice di recupero generato',
+  logout: 'Uscita dal dispositivo',
+  logout_tutti: 'Uscita da tutti i dispositivi',
+  esportazione_dati: 'Esportazione dei propri dati',
+};
 
 export default function IntegrationsScreen() {
   const navigation = useNavigation<any>();
@@ -46,6 +71,16 @@ export default function IntegrationsScreen() {
   const [newNome, setNewNome] = useState('');
   const [newPin, setNewPin] = useState('');
   const [newLivello, setNewLivello] = useState('B1');
+
+  // Sicurezza: registro accessi e codici di recupero.
+  const [showSecurity, setShowSecurity] = useState(false);
+  const [accessLog, setAccessLog] = useState<AccessLogRow[]>([]);
+  const [logProfile, setLogProfile] = useState<string | null>(null);
+  const [showRecoveryCodes, setShowRecoveryCodes] = useState(false);
+
+  // Privacy: informativa e azioni sui propri dati.
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [policy, setPolicy] = useState<PrivacyPolicy | null>(null);
 
   const load = useCallback(async () => {
     const [settingsResult, googleResult, profilesResult, dashboardResult, remindersResult] = await Promise.allSettled([
@@ -267,7 +302,17 @@ export default function IntegrationsScreen() {
       setNewLivello('B1');
       setShowAddProfile(false);
       await load();
-      Alert.alert('Profilo creato', response.message ?? 'Ora può accedere con il suo PIN.');
+
+      const codice = response.data?.codice_recupero;
+      if (codice) {
+        Alert.alert(
+          'Profilo creato',
+          `Consegna questo codice di recupero: serve se dimentica il PIN.\n\n${codice}\n\nNon sarà più visibile.`,
+          [{ text: 'Chiudi' }, { text: 'Condividi', onPress: () => Share.share({ message: `Codice di recupero ATLAS: ${codice}` }) }]
+        );
+      } else {
+        Alert.alert('Profilo creato', response.message ?? 'Ora può accedere con il suo PIN.');
+      }
     } catch (error: any) {
       Alert.alert('Errore', error?.message ?? 'Creazione non riuscita.');
     } finally {
@@ -295,6 +340,146 @@ export default function IntegrationsScreen() {
         },
       },
     ]);
+  };
+
+  const loadAccessLog = async (slug?: string) => {
+    try {
+      const response = await apiService.getAccessLog(slug);
+      setAccessLog(Array.isArray(response.data) ? response.data : []);
+      setLogProfile(slug ?? profileId ?? null);
+    } catch (error: any) {
+      Alert.alert('Registro non disponibile', error?.message ?? 'Riprova più tardi.');
+    }
+  };
+
+  const generateRecoveryCode = async (slug: string, nome: string) => {
+    setBusy(`recupero-${slug}`);
+    try {
+      const response = await apiService.generateRecoveryCode(slug);
+      const codice = response.data?.codice_recupero;
+      if (response.status !== 'ok' || !codice) {
+        Alert.alert('Codice non generato', response.message ?? 'Errore sconosciuto.');
+        return;
+      }
+      Alert.alert(
+        `Codice di recupero · ${nome}`,
+        `${codice}\n\nScrivilo e consegnalo a ${nome}: non sarà più visibile. Un codice precedente smette di funzionare.`,
+        [{ text: 'Chiudi' }, { text: 'Condividi', onPress: () => Share.share({ message: `Codice di recupero ATLAS per ${nome}: ${codice}` }) }]
+      );
+    } catch (error: any) {
+      Alert.alert('Errore', error?.message ?? 'Generazione non riuscita.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const logoutEverywhere = () => {
+    Alert.alert(
+      'Uscire da tutti i dispositivi?',
+      'Ogni telefono o tablet collegato a questo profilo dovrà reinserire il PIN, compreso questo.',
+      [
+        { text: 'Annulla', style: 'cancel' },
+        {
+          text: 'Esci da tutti',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await apiService.logoutAllDevices();
+              Alert.alert('Sessioni chiuse', response.message ?? 'Accedi di nuovo con il PIN.');
+            } catch (error: any) {
+              // Anche se la richiesta fallisce, il token locale viene rimosso.
+              Alert.alert('Sessione', error?.message ?? 'Chiudo comunque la sessione locale.');
+            } finally {
+              await clearAuth();
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const exportMyData = async () => {
+    setBusy('export');
+    try {
+      const dati = await apiService.exportMyData();
+      const json = JSON.stringify(dati, null, 2);
+      const filename = `atlas-${profileId ?? 'profilo'}.json`;
+
+      if (Platform.OS === 'web') {
+        const g: any = globalThis;
+        if (g.document && g.URL?.createObjectURL) {
+          const blob = new Blob([json], { type: 'application/json' });
+          const url = g.URL.createObjectURL(blob);
+          const link = g.document.createElement('a');
+          link.href = url;
+          link.download = filename;
+          link.click();
+          g.URL.revokeObjectURL(url);
+          return;
+        }
+      }
+
+      const path = `${FileSystem.cacheDirectory}${filename}`;
+      await FileSystem.writeAsStringAsync(path, json);
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(path, { mimeType: 'application/json', dialogTitle: 'I tuoi dati ATLAS' });
+      } else {
+        await Share.share({ message: json.slice(0, 4000) });
+      }
+    } catch (error: any) {
+      Alert.alert('Esportazione non riuscita', error?.message ?? 'Riprova più tardi.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const deleteMyProfile = () => {
+    Alert.alert(
+      'Cancellare il tuo profilo?',
+      'Verranno eliminati messaggi, promemoria, progressi, dispositivi collegati e registro accessi. Le liste condivise restano alla famiglia. L\'operazione non si può annullare.',
+      [
+        { text: 'Annulla', style: 'cancel' },
+        {
+          text: 'Cancella tutto',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await apiService.deleteMyProfile();
+              if (response.status !== 'ok') {
+                Alert.alert('Profilo non cancellato', response.message ?? '');
+                return;
+              }
+              await clearAuth();
+            } catch (error: any) {
+              Alert.alert('Errore', error?.message ?? 'Cancellazione non riuscita.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const openPrivacy = async () => {
+    const prossimo = !showPrivacy;
+    setShowPrivacy(prossimo);
+    if (!prossimo || policy) return;
+    try {
+      const response = await apiService.getPrivacyPolicy();
+      if (response.data) setPolicy(response.data);
+    } catch (error: any) {
+      Alert.alert('Informativa non disponibile', error?.message ?? 'Riprova più tardi.');
+    }
+  };
+
+  const formatLogTime = (value: string): string => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString('it-IT', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   const logout = () => {
@@ -493,6 +678,120 @@ export default function IntegrationsScreen() {
           <Text className="text-[#a78bfa] font-bold text-2xl">›</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity
+          onPress={() => {
+            const prossimo = !showSecurity;
+            setShowSecurity(prossimo);
+            if (prossimo) loadAccessLog(isAdmin ? logProfile ?? profileId ?? undefined : undefined);
+          }}
+          className="bg-[rgba(255,255,255,0.06)] p-5 rounded-3xl mb-4 border border-white/5 flex-row justify-between items-center"
+        >
+          <View className="flex-1 pr-4">
+            <Text className="text-white text-xl font-bold">📋 Registro accessi</Text>
+            <Text className="text-gray-400 mt-1">
+              Chi ha aperto l'app, quando, da quale rete e dispositivo.
+            </Text>
+          </View>
+          <Text className="text-[#a78bfa] font-bold text-2xl">{showSecurity ? '⌄' : '›'}</Text>
+        </TouchableOpacity>
+
+        {showSecurity ? (
+          <View className="bg-[rgba(255,255,255,0.06)] p-5 rounded-3xl mb-4 border border-white/5">
+            {isAdmin ? (
+              <View className="flex-row flex-wrap mb-3">
+                {Object.entries(profiles).map(([slug, rowData]) => (
+                  <TouchableOpacity
+                    key={slug}
+                    onPress={() => loadAccessLog(slug)}
+                    className={`px-3 py-2 rounded-xl mr-2 mb-2 border ${
+                      logProfile === slug ? 'bg-[#7c3aed] border-[#7c3aed]' : 'bg-[#ffffff10] border-white/10'
+                    }`}
+                  >
+                    <Text className="text-white text-sm font-bold">{rowData.nome}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
+
+            {accessLog.length ? (
+              accessLog.slice(0, CONFIG.ACCESS_LOG_LIMIT).map((evento, index) => (
+                <View
+                  key={`${evento.quando}-${index}`}
+                  className="flex-row items-start py-2 border-b border-white/5"
+                >
+                  <View
+                    className="w-2 h-2 rounded-full mt-2 mr-3"
+                    style={{ backgroundColor: evento.esito === 'ok' ? '#22c55e' : '#ef4444' }}
+                  />
+                  <View className="flex-1">
+                    <Text className="text-white font-bold">
+                      {MOTIVI_ACCESSO[evento.motivo] ?? evento.motivo}
+                    </Text>
+                    <Text className="text-gray-400 text-sm">
+                      {formatLogTime(evento.quando)} · {evento.dispositivo || 'Dispositivo sconosciuto'}
+                      {evento.ip ? ` · ${evento.ip}` : ''}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <Text className="text-gray-400">Nessun accesso registrato.</Text>
+            )}
+          </View>
+        ) : null}
+
+        <TouchableOpacity
+          onPress={logoutEverywhere}
+          className="bg-[rgba(255,255,255,0.06)] p-5 rounded-3xl mb-4 border border-white/5 flex-row justify-between items-center"
+        >
+          <View className="flex-1 pr-4">
+            <Text className="text-white text-xl font-bold">📵 Esci da tutti i dispositivi</Text>
+            <Text className="text-gray-400 mt-1">
+              Chiude ogni sessione aperta con il tuo profilo, utile se hai perso un telefono.
+            </Text>
+          </View>
+          <Text className="text-[#a78bfa] font-bold text-2xl">›</Text>
+        </TouchableOpacity>
+
+        {isAdmin ? (
+          <>
+            <TouchableOpacity
+              onPress={() => setShowRecoveryCodes((previous) => !previous)}
+              className="bg-[rgba(255,255,255,0.06)] p-5 rounded-3xl mb-4 border border-white/5 flex-row justify-between items-center"
+            >
+              <View className="flex-1 pr-4">
+                <Text className="text-white text-xl font-bold">🔑 Codici di recupero</Text>
+                <Text className="text-gray-400 mt-1">
+                  Un codice personale per ogni membro: permette di reimpostare il PIN da solo.
+                </Text>
+              </View>
+              <Text className="text-[#a78bfa] font-bold text-2xl">{showRecoveryCodes ? '⌄' : '›'}</Text>
+            </TouchableOpacity>
+
+            {showRecoveryCodes ? (
+              <View className="bg-[rgba(255,255,255,0.06)] p-5 rounded-3xl mb-4 border border-white/5">
+                <Text className="text-gray-400 mb-3">
+                  Ogni codice è monouso e visibile una sola volta. Rigenerarlo annulla quello precedente.
+                </Text>
+                {Object.entries(profiles).map(([slug, rowData]) => (
+                  <View key={slug} className="flex-row justify-between items-center py-2">
+                    <Text className="text-white font-bold flex-1 pr-3">{rowData.nome}</Text>
+                    <TouchableOpacity
+                      onPress={() => generateRecoveryCode(slug, rowData.nome)}
+                      disabled={busy === `recupero-${slug}`}
+                      className="bg-[#7c3aed] px-3 py-2 rounded-xl"
+                    >
+                      <Text className="text-white font-bold text-sm">
+                        {busy === `recupero-${slug}` ? '...' : 'Genera'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </>
+        ) : null}
+
         <Text className="text-2xl font-bold text-white mb-5 ml-2 mt-4">Gestione Profili</Text>
 
         <View className="bg-[rgba(255,255,255,0.06)] p-5 rounded-3xl mb-4 border border-white/5">
@@ -577,6 +876,72 @@ export default function IntegrationsScreen() {
             </Text>
           )}
         </View>
+
+        <Text className="text-2xl font-bold text-white mb-5 ml-2 mt-4">Privacy</Text>
+
+        <TouchableOpacity
+          onPress={exportMyData}
+          disabled={busy === 'export'}
+          className="bg-[rgba(255,255,255,0.06)] p-5 rounded-3xl mb-4 border border-white/5 flex-row justify-between items-center"
+        >
+          <View className="flex-1 pr-4">
+            <Text className="text-white text-xl font-bold">📦 Esporta i miei dati</Text>
+            <Text className="text-gray-400 mt-1">
+              Scarica in JSON tutto ciò che l'app conserva su di te.
+            </Text>
+          </View>
+          <Text className="text-[#a78bfa] font-bold text-2xl">
+            {busy === 'export' ? '…' : '›'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={openPrivacy}
+          className="bg-[rgba(255,255,255,0.06)] p-5 rounded-3xl mb-4 border border-white/5 flex-row justify-between items-center"
+        >
+          <View className="flex-1 pr-4">
+            <Text className="text-white text-xl font-bold">🛡️ Informativa privacy</Text>
+            <Text className="text-gray-400 mt-1">
+              Quali dati, per quanto tempo e dove restano.
+            </Text>
+          </View>
+          <Text className="text-[#a78bfa] font-bold text-2xl">{showPrivacy ? '⌄' : '›'}</Text>
+        </TouchableOpacity>
+
+        {showPrivacy ? (
+          <View className="bg-[rgba(255,255,255,0.06)] p-5 rounded-3xl mb-4 border border-white/5">
+            {policy ? (
+              <>
+                <Text className="text-gray-500 text-xs mb-3">
+                  Versione {policy.versione} · aggiornata il {policy.aggiornata}
+                </Text>
+                {policy.sezioni.map((sezione) => (
+                  <View key={sezione.titolo} className="mb-4">
+                    <Text className="text-white font-bold mb-1">{sezione.titolo}</Text>
+                    <Text className="text-gray-400 text-sm leading-5">{sezione.testo}</Text>
+                  </View>
+                ))}
+                <Text className="text-white font-bold mb-2">Tempi di conservazione</Text>
+                {Object.entries(policy.conservazione).map(([chiave, testo]) => (
+                  <Text key={chiave} className="text-gray-400 text-sm leading-5 mb-1">
+                    • {chiave.replace(/_/g, ' ')}: {testo}
+                  </Text>
+                ))}
+              </>
+            ) : (
+              <ActivityIndicator color="#7c3aed" />
+            )}
+          </View>
+        ) : null}
+
+        {!isAdmin ? (
+          <TouchableOpacity
+            onPress={deleteMyProfile}
+            className="bg-[#ef444415] border border-[#ef444440] p-4 rounded-2xl items-center mb-4"
+          >
+            <Text className="text-[#fca5a5] font-bold text-lg">Cancella il mio profilo e i miei dati</Text>
+          </TouchableOpacity>
+        ) : null}
 
         <TouchableOpacity
           onPress={logout}

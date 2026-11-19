@@ -64,6 +64,33 @@ def sha256_text(text: str, salt: Optional[str] = None) -> str:
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
+# ---------- Codice di recupero ----------
+# Alfabeto senza caratteri ambigui (niente I, L, O, U, 0, 1): un codice letto
+# da un foglio di carta o dettato al telefono non si sbaglia.
+RECOVERY_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ"
+RECOVERY_GROUPS = 4
+RECOVERY_GROUP_SIZE = 4
+
+
+def generate_recovery_code() -> str:
+    """Codice di recupero monouso, es. `7K2M-9QXF-3ABD-HJ5P` (mostrato una volta)."""
+    gruppi = [
+        "".join(secrets.choice(RECOVERY_ALPHABET) for _ in range(RECOVERY_GROUP_SIZE))
+        for _ in range(RECOVERY_GROUPS)
+    ]
+    return "-".join(gruppi)
+
+
+def normalize_recovery_code(value: str) -> str:
+    """Maiuscolo e senza trattini/spazi: accetta anche `7k2m9qxf3abd hj5p`."""
+    return "".join(ch for ch in (value or "").upper() if ch.isalnum())
+
+
+def verify_recovery_code(value: str, hashed: str) -> bool:
+    """Verifica un codice di recupero contro il suo hash bcrypt."""
+    return verify_pin(normalize_recovery_code(value), hashed)
+
+
 # ---------- Validazione input ----------
 def is_safe_numeric_pin(pin: str, min_len: int = 4, max_len: int = 8) -> bool:
     """True solo se il PIN è composto da cifre con lunghezza ammessa."""
@@ -86,6 +113,12 @@ def normalize_slug(value: str) -> str:
     """Normalizza uno slug profilo (lowercase, solo lettere/cifre/underscore)."""
     cleaned = sanitize_alphanum((value or "").strip().lower(), extra="_-")
     return cleaned[:50]
+
+
+def is_valid_recovery_code(value: str) -> bool:
+    """True se ha la lunghezza attesa (16 caratteri, trattini opzionali)."""
+    atteso = RECOVERY_GROUPS * RECOVERY_GROUP_SIZE
+    return len(normalize_recovery_code(value)) == atteso
 
 
 # ---------- Token di sessione (HMAC, stateless) ----------

@@ -98,3 +98,12 @@ def _reset_rate_limiter(_limiter):
     except Exception:
         pass
     yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_auth_guard(_isolated_db):
+    """Blocco progressivo e registro accessi ripartono puliti per ogni test."""
+    from app.core import auth_guard
+
+    auth_guard.reset_all()
+    yield

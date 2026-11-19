@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Text, View } from 'react-native';
 import { NativeWindStyleSheet } from 'nativewind';
 import { NavigationContainer } from '@react-navigation/native';
@@ -14,6 +14,7 @@ import BudgetScreen from './src/screens/BudgetScreen';
 import IntegrationsScreen from './src/screens/IntegrationsScreen';
 import PdfScreen from './src/screens/PdfScreen';
 import PinScreen from './src/screens/PinScreen';
+import LockScreen from './src/screens/LockScreen';
 import CONFIG from './src/config';
 import apiService, { ApiError } from './src/services/api';
 import {
@@ -173,6 +174,14 @@ export default function App() {
   const [profileId, setProfileId] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileInfo | null>(null);
   const [ready, setReady] = useState(false);
+  // Blocco automatico: il token resta salvato, ma per usarlo serve il PIN.
+  const [locked, setLocked] = useState(false);
+  const lastActivityRef = useRef(Date.now());
+  const backgroundAtRef = useRef(0);
+
+  const touchActivity = useCallback(() => {
+    lastActivityRef.current = Date.now();
+  }, []);
 
   useEffect(() => {
     configureNotifications();
@@ -244,6 +253,7 @@ export default function App() {
     // e le sue richieste devono trovarlo già in AsyncStorage.
     setAuthToken(token);
     setProfileId(slug);
+    lastActivityRef.current = Date.now();
 
     if (token && slug) {
       await persistProfile(slug, token);
@@ -265,6 +275,7 @@ export default function App() {
     setAuthToken(null);
     setProfileId(null);
     setProfile(null);
+    setLocked(false);
     await AsyncStorage.multiRemove([
       CONFIG.STORAGE_AUTH_TOKEN_KEY,
       CONFIG.STORAGE_PROFILE_KEY,
@@ -293,11 +304,51 @@ export default function App() {
 
   const authenticated = Boolean(authToken && profileId);
 
+  // Blocco per inattività mentre l'app resta aperta.
+  useEffect(() => {
+    if (!authenticated) return;
+    const timer = setInterval(() => {
+      const soglia = CONFIG.AUTO_LOCK_MINUTES * 60_000;
+      if (Date.now() - lastActivityRef.current >= soglia) {
+        setLocked(true);
+      }
+    }, 15_000);
+    return () => clearInterval(timer);
+  }, [authenticated]);
+
+  // Blocco quando si torna all'app dopo una pausa (schermo spento, altra app).
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'background' || state === 'inactive') {
+        backgroundAtRef.current = Date.now();
+        return;
+      }
+      if (state === 'active') {
+        const assenza = backgroundAtRef.current ? Date.now() - backgroundAtRef.current : 0;
+        backgroundAtRef.current = 0;
+        if (authenticated && assenza >= CONFIG.AUTO_LOCK_MINUTES * 60_000) {
+          setLocked(true);
+        } else {
+          touchActivity();
+        }
+      }
+    });
+    return () => subscription.remove();
+  }, [authenticated, touchActivity]);
+
   return (
     <AuthContext.Provider
       value={{ authToken, profileId, profile, ready, setAuth, clearAuth }}
     >
-      <NavigationContainer>
+      {locked && authenticated ? (
+        <LockScreen
+          onUnlock={() => {
+            touchActivity();
+            setLocked(false);
+          }}
+        />
+      ) : (
+      <NavigationContainer onStateChange={touchActivity}>
         {!ready ? (
           <View style={{ flex: 1, backgroundColor: '#0a0a0f', alignItems: 'center', justifyContent: 'center' }}>
             <ActivityIndicator color="#7c3aed" size="large" />
@@ -318,6 +369,7 @@ export default function App() {
           </Stack.Navigator>
         )}
       </NavigationContainer>
+      )}
     </AuthContext.Provider>
   );
 }

@@ -84,6 +84,22 @@ export interface ProfileRow {
   lingua_madre?: string;
 }
 
+export interface AccessLogRow {
+  quando: string;
+  profilo: string;
+  esito: 'ok' | 'errore' | 'bloccato';
+  motivo: string;
+  ip: string;
+  dispositivo: string;
+}
+
+export interface PrivacyPolicy {
+  versione: string;
+  aggiornata: string;
+  sezioni: Array<{ titolo: string; testo: string }>;
+  conservazione: Record<string, string>;
+}
+
 export interface AppSettings {
   automazioni: Record<string, boolean>;
   notifiche: Record<string, boolean>;
@@ -268,7 +284,7 @@ class ApiService {
     pin: string;
     livello_italiano?: string;
     lingua_madre?: string;
-  }): Promise<GenericResult<{ slug: string }>> {
+  }): Promise<GenericResult<{ slug: string; codice_recupero?: string }>> {
     return this._request('POST', '/profili', params);
   }
 
@@ -279,6 +295,45 @@ class ApiService {
   /** Cambia il PIN di un profilo (solo amministratore). Chiude le sessioni attive di quel profilo. */
   async changePin(slug: string, pin: string): Promise<GenericResult> {
     return this._request<GenericResult>('POST', `/profili/${encodeURIComponent(slug)}/pin`, { pin });
+  }
+
+  /** Recupero senza amministratore: codice personale monouso + nuovo PIN. */
+  async recoverAccess(profileId: string, codice: string, nuovoPin: string): Promise<PinAuthResult> {
+    return this._request<PinAuthResult>('POST', '/auth/recupero', {
+      profilo: profileId,
+      codice,
+      nuovo_pin: nuovoPin,
+    });
+  }
+
+  /** Genera un nuovo codice di recupero (solo amministratore, visibile una volta). */
+  async generateRecoveryCode(slug: string): Promise<GenericResult<{ codice_recupero: string }>> {
+    return this._request('POST', `/profili/${encodeURIComponent(slug)}/recupero`);
+  }
+
+  /** Chiude tutte le sessioni del profilo, compresa quella corrente. */
+  async logoutAllDevices(): Promise<GenericResult> {
+    return this._request<GenericResult>('POST', '/auth/logout-tutti', {});
+  }
+
+  /** Registro accessi: il proprio, oppure quello di un membro se sei amministratore. */
+  async getAccessLog(slug?: string): Promise<GenericResult<AccessLogRow[]>> {
+    const query = slug ? `?profilo=${encodeURIComponent(slug)}` : '';
+    return this._request('GET', `/auth/accessi${query}`);
+  }
+
+  // ---------------- Privacy ----------------
+  async getPrivacyPolicy(): Promise<GenericResult<PrivacyPolicy>> {
+    return this._request('GET', '/privacy/informativa');
+  }
+
+  /** Tutti i dati del profilo autenticato, in JSON. */
+  async exportMyData(): Promise<Record<string, unknown>> {
+    return this._request('GET', '/privacy/dati', undefined, { timeoutMs: 30000 });
+  }
+
+  async deleteMyProfile(): Promise<GenericResult> {
+    return this._request('DELETE', '/privacy/profilo');
   }
 
   // ---------------- Chat ----------------

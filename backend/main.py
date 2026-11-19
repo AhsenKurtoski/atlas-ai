@@ -35,6 +35,7 @@ from slowapi.util import get_remote_address
 from starlette.concurrency import run_in_threadpool
 
 from app.ai_router import ai_router
+from app.core import auth_guard
 from app.core.context import current_profile
 from app.core.database import (
     DEMO_PINS,
@@ -85,6 +86,7 @@ from app.core.schemas import (
     PushRegisterRequest,
     PushTestRequest,
     QuizSubmitRequest,
+    RecoverRequest,
     SettingsUpdateRequest,
     TranscriptionRequest,
     TranscriptionResponse,
@@ -93,12 +95,16 @@ from app.core.schemas import (
 from app.core.security import (
     create_access_token,
     decode_token_details,
+    generate_recovery_code,
     hash_pin,
+    is_valid_recovery_code,
+    normalize_recovery_code,
     normalize_slug,
     sha256_text,
     token_info,
     token_ttl_seconds,
     verify_pin,
+    verify_recovery_code,
 )
 from app.core.settings import (
     cors_origin_regex,
@@ -107,6 +113,7 @@ from app.core.settings import (
     scheduler_enabled,
 )
 from app.notifiche import invia_a_profilo
+from app.services import privacy
 from app.services.backup import backup_local_db
 from app.services.browser import browser_profile, shutdown_browser
 from app.services.pdf import build_pdf
@@ -300,15 +307,61 @@ def crea_profilo(
     if len(profili) >= 15:
         return GenericResponse(status="error", message="Limite di 15 profili famiglia raggiunto.")
 
+    codice_recupero = generate_recovery_code()
     upsert_profile(
         slug=slug,
         nome=payload.nome.strip(),
         lingua_madre=payload.lingua_madre.strip() or "Italiano",
         livello_italiano=payload.livello_italiano.strip() or "B1",
         pin_hash=hash_pin(payload.pin),
+        recovery_hash=hash_pin(normalize_recovery_code(codice_recupero)),
     )
     log.info("Profilo creato da %s: %s", slug_autenticato, slug)
-    return GenericResponse(status="ok", message=f"Profilo '{payload.nome}' creato.", data={"slug": slug})
+    return GenericResponse(
+        status="ok",
+        message=f"Profilo '{payload.nome}' creato. Consegna il codice di recupero al membro: non sarà più visibile.",
+        data={"slug": slug, "codice_recupero": codice_recupero},
+    )
+
+
+@app.post("/profili/{slug}/recupero", response_model=GenericResponse)
+@limiter.limit("10/minute")
+def genera_codice_recupero(
+    request: Request,
+    slug: str,
+    slug_autenticato: str = Depends(get_current_profile),
+) -> GenericResponse:
+    """Genera un nuovo codice di recupero monouso (solo amministratore).
+
+    Il codice in chiaro viene restituito una sola volta: nel database resta
+    solo l'hash bcrypt. Un codice precedente smette di funzionare.
+    """
+    if slug_autenticato != "io":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Solo il profilo amministratore può generare codici di recupero.",
+        )
+    target = normalize_slug(slug)
+    profilo = fetch_profiles().get(target)
+    if not profilo:
+        return GenericResponse(status="error", message="Profilo non trovato.")
+
+    codice = generate_recovery_code()
+    upsert_profile(
+        slug=target,
+        nome=str(profilo.get("nome") or target),
+        lingua_madre=str(profilo.get("lingua_madre") or "Italiano"),
+        livello_italiano=str(profilo.get("livello_italiano") or "B1"),
+        recovery_hash=hash_pin(normalize_recovery_code(codice)),
+    )
+    ip, device = _request_context(request)
+    auth_guard.record_event(target, "ok", "recupero_generato", ip, device)
+    log.info("Codice di recupero rigenerato per %s da %s", target, slug_autenticato)
+    return GenericResponse(
+        status="ok",
+        message="Nuovo codice di recupero. Scrivilo subito: non sarà più visibile.",
+        data={"codice_recupero": codice},
+    )
 
 
 @app.delete("/profili/{slug}", response_model=GenericResponse)
@@ -391,12 +444,35 @@ def aggiorna_pin_profilo(
 
 
 # ---------------- Auth PIN ----------------
+def _request_context(request: Request) -> tuple[str, str]:
+    """IP e dispositivo leggibile per il registro accessi."""
+    ip = auth_guard.client_ip(request)
+    device = auth_guard.describe_device(request.headers.get("user-agent", ""))
+    return ip, device
+
+
+def _lock_message(retry_after: int) -> str:
+    minuti = max(1, round(retry_after / 60))
+    if retry_after < 60:
+        return f"Troppi tentativi errati. Riprova tra {retry_after} secondi."
+    return f"Troppi tentativi errati. Riprova tra {minuti} minuti."
+
+
 @app.post("/auth/pin", response_model=PinAuthResponse)
 @limiter.limit("5/minute")  # anti-bruteforce: 5 tentativi al minuto per IP
 async def verifica_pin(request: Request, payload: PinAuthRequest) -> PinAuthResponse:
-    profili = fetch_profiles()
-    profilo = profili.get(normalize_slug(payload.profilo))
+    slug_richiesto = normalize_slug(payload.profilo)
+    ip, device = _request_context(request)
+
+    stato = auth_guard.lockout_status(slug_richiesto)
+    if stato["locked"]:
+        auth_guard.record_event(slug_richiesto, "bloccato", "pin_bloccato", ip, device)
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, _lock_message(stato["retry_after"]))
+
+    profilo = fetch_profiles().get(slug_richiesto)
     if not profilo:
+        auth_guard.register_failure(slug_richiesto)
+        auth_guard.record_event(slug_richiesto, "errore", "profilo_sconosciuto", ip, device)
         log.warning("Auth fallito: profilo sconosciuto %s", payload.profilo)
         return PinAuthResponse(auth=False, message="Profilo non valido.")
 
@@ -413,9 +489,18 @@ async def verifica_pin(request: Request, payload: PinAuthRequest) -> PinAuthResp
         )
 
     if not verify_pin(payload.pin, pin_hash):
-        log.info("PIN errato per %s", profilo.get("slug"))
+        nuovo_stato = auth_guard.register_failure(profilo["slug"])
+        auth_guard.record_event(profilo["slug"], "errore", "pin_errato", ip, device)
+        log.info("PIN errato per %s (tentativo %d)", profilo["slug"], nuovo_stato["failures"])
+        if nuovo_stato["locked"]:
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                _lock_message(nuovo_stato["retry_after"]),
+            )
         return PinAuthResponse(auth=False, message="PIN errato.")
 
+    auth_guard.register_success(profilo["slug"])
+    auth_guard.record_event(profilo["slug"], "ok", "pin", ip, device)
     token = create_access_token(profilo["slug"], pin_version=db_pin_version(profilo))
     log.info("Auth OK: %s", profilo["slug"])
     return PinAuthResponse(
@@ -425,6 +510,66 @@ async def verifica_pin(request: Request, payload: PinAuthRequest) -> PinAuthResp
         token=token,
         expires_in=token_ttl_seconds(),
         message="Autenticazione riuscita.",
+    )
+
+
+@app.post("/auth/recupero", response_model=PinAuthResponse)
+@limiter.limit("5/minute")
+async def recupera_accesso(request: Request, payload: RecoverRequest) -> PinAuthResponse:
+    """Recupero senza amministratore: codice personale monouso + nuovo PIN."""
+    slug_richiesto = normalize_slug(payload.profilo)
+    ip, device = _request_context(request)
+
+    stato = auth_guard.lockout_status(slug_richiesto)
+    if stato["locked"]:
+        auth_guard.record_event(slug_richiesto, "bloccato", "recupero_bloccato", ip, device)
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, _lock_message(stato["retry_after"]))
+
+    messaggio_generico = "Codice di recupero non valido o già utilizzato."
+    profilo = fetch_profiles().get(slug_richiesto)
+    if not profilo or not profilo.get("recovery_hash"):
+        auth_guard.register_failure(slug_richiesto)
+        auth_guard.record_event(slug_richiesto, "errore", "recupero_senza_codice", ip, device)
+        return PinAuthResponse(auth=False, message=messaggio_generico)
+
+    if not is_valid_recovery_code(payload.codice) or not verify_recovery_code(
+        payload.codice, str(profilo.get("recovery_hash"))
+    ):
+        nuovo_stato = auth_guard.register_failure(slug_richiesto)
+        auth_guard.record_event(slug_richiesto, "errore", "recupero_errato", ip, device)
+        if nuovo_stato["locked"]:
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                _lock_message(nuovo_stato["retry_after"]),
+            )
+        return PinAuthResponse(auth=False, message=messaggio_generico)
+
+    if is_production() and payload.nuovo_pin in DEMO_PINS.values():
+        return PinAuthResponse(
+            auth=False,
+            message="PIN demo non ammesso in produzione: scegli un PIN personale.",
+        )
+
+    nuova_versione = db_pin_version(profilo) + 1
+    upsert_profile(
+        slug=slug_richiesto,
+        nome=str(profilo.get("nome") or slug_richiesto),
+        lingua_madre=str(profilo.get("lingua_madre") or "Italiano"),
+        livello_italiano=str(profilo.get("livello_italiano") or "B1"),
+        pin_hash=hash_pin(payload.nuovo_pin),
+        pin_version=nuova_versione,
+        recovery_hash="",
+    )
+    auth_guard.register_success(slug_richiesto)
+    auth_guard.record_event(slug_richiesto, "ok", "recupero", ip, device)
+    log.info("Accesso recuperato con codice personale: %s (v%d)", slug_richiesto, nuova_versione)
+    return PinAuthResponse(
+        auth=True,
+        profilo=profilo.get("nome"),
+        slug=slug_richiesto,
+        token=create_access_token(slug_richiesto, pin_version=nuova_versione),
+        expires_in=token_ttl_seconds(),
+        message="PIN reimpostato. Il codice di recupero è stato consumato: generane uno nuovo.",
     )
 
 
@@ -455,8 +600,110 @@ def auth_logout(request: Request, slug: str = Depends(get_current_profile)) -> G
     info = token_info(raw_token) if raw_token else None
     if info:
         revoke_token(sha256_text(raw_token), info[1])
+    ip, device = _request_context(request)
+    auth_guard.record_event(slug, "ok", "logout", ip, device)
     log.info("Logout profilo %s (token revocato)", slug)
     return GenericResponse(status="ok", message="Sessione chiusa su questo dispositivo.")
+
+
+@app.post("/auth/logout-tutti", response_model=GenericResponse)
+@limiter.limit("10/minute")
+def auth_logout_tutti(
+    request: Request,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    """Chiude ogni sessione del profilo (token legati alla vecchia versione del PIN)."""
+    profilo = fetch_profiles().get(slug)
+    if not profilo:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Profilo non più valido.")
+    nuova_versione = db_pin_version(profilo) + 1
+    upsert_profile(
+        slug=slug,
+        nome=str(profilo.get("nome") or slug),
+        lingua_madre=str(profilo.get("lingua_madre") or "Italiano"),
+        livello_italiano=str(profilo.get("livello_italiano") or "B1"),
+        pin_version=nuova_versione,
+    )
+    ip, device = _request_context(request)
+    auth_guard.record_event(slug, "ok", "logout_tutti", ip, device)
+    log.info("Tutte le sessioni chiuse per %s (v%d)", slug, nuova_versione)
+    return GenericResponse(
+        status="ok",
+        message="Tutte le sessioni sono state chiuse, compresa questa. Accedi di nuovo con il tuo PIN.",
+    )
+
+
+@app.get("/auth/accessi", response_model=GenericResponse)
+@limiter.limit("30/minute")
+def auth_accessi(
+    request: Request,
+    profilo: str = Query(default="", max_length=50),
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    """Registro accessi: il proprio, oppure quello di un membro se sei io."""
+    target = normalize_slug(profilo) if profilo else slug
+    if target != slug and slug != "io":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Puoi vedere solo il registro dei tuoi accessi.",
+        )
+    return GenericResponse(status="ok", data=auth_guard.list_events(target, limit=50))
+
+
+# ---------------- Privacy ----------------
+@app.get("/privacy/informativa", response_model=GenericResponse)
+@limiter.limit("60/minute")
+def privacy_informativa(request: Request) -> GenericResponse:
+    """Informativa privacy in italiano semplice (leggibile senza login)."""
+    return GenericResponse(status="ok", data=privacy.policy_payload())
+
+
+@app.get("/privacy/dati")
+@limiter.limit("5/minute")
+def privacy_esporta_dati(
+    request: Request,
+    slug: str = Depends(get_current_profile),
+) -> JSONResponse:
+    """Esporta in JSON tutti i dati del profilo autenticato (diritto di accesso)."""
+    esportazione = privacy.build_export(slug)
+    auth_guard.record_event(slug, "ok", "esportazione_dati", *_request_context(request))
+    log.info("Esportazione dati per %s", slug)
+    filename = f"atlas-{slug}-{datetime.now(timezone.utc).strftime('%Y%m%d')}.json"
+    return JSONResponse(
+        content=esportazione,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.delete("/privacy/profilo", response_model=GenericResponse)
+@limiter.limit("5/minute")
+def privacy_elimina_profilo(
+    request: Request,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    """Cancella il proprio profilo e i dati personali (diritto all'oblio)."""
+    if slug == "io":
+        return GenericResponse(
+            status="error",
+            message=(
+                "Il profilo amministratore non può cancellarsi da solo: serve un "
+                "altro amministratore che gestisca la famiglia."
+            ),
+        )
+    esito = privacy.delete_profile(slug)
+    log.info("Profilo %s cancellato dall'utente", slug)
+    return GenericResponse(
+        status="ok" if esito["profilo_eliminato"] else "error",
+        message=(
+            "Profilo e dati personali cancellati."
+            if esito["profilo_eliminato"]
+            else "Cancellazione non riuscita: riprova o contatta l'amministratore."
+        ),
+        data=esito,
+    )
 
 
 # ---------------- Chat ----------------

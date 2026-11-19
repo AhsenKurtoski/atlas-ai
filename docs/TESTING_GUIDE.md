@@ -357,7 +357,7 @@ Dopo ogni push su `main`, apri:
 
 Devono essere verdi tutti i workflow:
 
-- **CI / Backend (pytest, Python 3.12)** — installa Chromium e esegue 186 test;
+- **CI / Backend (pytest, Python 3.12)** — installa Chromium e esegue oltre 200 test;
 - **CI / Frontend (TypeScript)** — `npm ci` + `tsc --noEmit`;
 - **E2E / Web smoke** — avvia FastAPI, esporta il web e verifica login, lista spesa e generazione PDF nel browser;
 - **iOS Build** — genera il progetto iOS e compila l'app per il simulatore su macOS;

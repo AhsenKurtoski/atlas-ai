@@ -47,9 +47,13 @@ ATLAS è pensato per **una famiglia su un'istanza privata**, non come SaaS multi
 6. `SCHEDULER_ENABLED=true` su **un solo processo** per host: il lock su file impedisce ai worker di duplicare i job, ma su più host serve un processo dedicato.
 7. Rate limiter su Redis (`storage_uri`) se usi più processi e vuoi limiti condivisi.
 8. Backup di `backend/_local_db/`: il backend ne crea uno automatico all'avvio e
-   ogni 6 ore in `backend/_backups` (ultimi 14 archivi, escluso il lock).
-   Ripristino: fermare il servizio, scompattare lo zip scelto dentro
-   `backend/_local_db` e riavviare. Per Supabase, esporta il progetto.
+   ogni 6 ore in `backend/_backups` (ultimi 14 archivi, escluso il lock). Gli
+   archivi sono **cifrati** con una chiave derivata da `ATLAS_BACKUP_PASSWORD`
+   (o da `ATLAS_SECRET_KEY` se la variabile manca): conserva quella password
+   fuori dal PC. Ripristino: fermare il servizio,
+   `python -m app.services.backup decrypt _backups/<file>.zip.enc` dalla
+   cartella `backend`, scompattare lo zip dentro `_local_db` e riavviare. Per
+   Supabase, esporta il progetto.
 9. Non committare `.env`, `_local_db/`, credenziali Firebase o token Google.
 10. Aggiornare le dipendenze con regolarità (`pip list --outdated`, `npm outdated`).
 
@@ -67,9 +71,24 @@ ATLAS è pensato per **una famiglia su un'istanza privata**, non come SaaS multi
   avanza al cambio PIN. I token portano la versione con cui sono stati emessi,
   quindi tutte le sessioni aperte di quel profilo ricevono 401 al primo uso (le
   sessioni degli altri profili restano valide).
-- Con Supabase, aggiungi la colonna `pin_version INTEGER NOT NULL DEFAULT 0`
-  alla tabella `profiles`; in modalità locale è dentro `profiles.json`.
-- **Backup automatico** del database locale con rotazione (14 archivi).
+- Con Supabase, aggiungi alla tabella `profiles` le colonne
+  `pin_version INTEGER NOT NULL DEFAULT 0`, `recovery_hash TEXT` e
+  `recovery_created_at TIMESTAMPTZ`; in modalità locale sono dentro
+  `profiles.json`.
+- **Codice di recupero**: 16 caratteri senza ambiguità, salvato solo come hash
+  bcrypt, monouso (viene cancellato dopo l'uso) e rigenerabile dall'amministratore
+  da Impostazioni → Sicurezza. Permette di reimpostare il PIN senza chiedere
+  all'amministratore, ma non rivela il PIN precedente.
+- **Blocco progressivo** per profilo dopo tentativi errati (5→60s, 6→120s,
+  7→300s, 8+→900s), con contatore che si azzera al primo accesso riuscito.
+- **Registro accessi** locale in `_local_db/access_log.json`: esito, motivo, IP
+  (primo hop di `X-Forwarded-For`) e tipo di dispositivo, consultabile solo dal
+  profilo interessato o dall'amministratore.
+- **Esci da tutti i dispositivi** (`POST /auth/logout-tutti`) e blocco automatico
+  dell'app dopo inattività; il token vive in `AsyncStorage` perché sulla web app
+  iOS Safari non esiste accesso al Keychain (per una build nativa va usato
+  `expo-secure-store`).
+- **Backup cifrati** del database locale con rotazione (14 archivi).
 - **CORS fail closed** in produzione: solo le origini elencate esplicitamente.
 - Token firmati HMAC-SHA256 con scadenza; **revoca server-side al logout** (denylist).
 - Endpoint privati protetti da `Authorization: Bearer`; 401 uniforme.

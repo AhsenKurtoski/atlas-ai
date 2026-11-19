@@ -44,6 +44,21 @@ class UpdatePinRequest(BaseModel):
         return value
 
 
+class RecoverRequest(BaseModel):
+    """Recupero accesso con codice personale + scelta di un nuovo PIN."""
+
+    profilo: str = Field(..., min_length=1, max_length=50)
+    codice: str = Field(..., min_length=8, max_length=40, description="Codice di recupero personale")
+    nuovo_pin: str = Field(..., min_length=4, max_length=8)
+
+    @field_validator("nuovo_pin")
+    @classmethod
+    def _pin_must_be_digits(cls, value: str) -> str:
+        if not is_safe_numeric_pin(value):
+            raise ValueError("Il PIN deve contenere solo cifre (4-8)")
+        return value
+
+
 class MeResponse(BaseModel):
     slug: str
     nome: str

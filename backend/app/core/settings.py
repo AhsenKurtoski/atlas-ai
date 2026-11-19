@@ -11,7 +11,9 @@ import os
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
-LOCAL_DB_DIR = BACKEND_DIR / "_local_db"
+# Cartella del database locale: `ATLAS_DB_DIR` permette di isolare test E2E,
+# prove di ripristino e installazioni multiple senza toccare i dati reali.
+LOCAL_DB_DIR = Path(os.getenv("ATLAS_DB_DIR", "").strip() or (BACKEND_DIR / "_local_db"))
 
 TRUTHY = {"1", "true", "yes", "on", "si", "sì"}
 

@@ -7,7 +7,7 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 > lezioni di italiano, integrazione reale con Gmail/Calendar e server MCP, e un
 > **agente browser Chromium** che apre siti, clicca, compila moduli e legge pagine dinamiche.
 
-**Licenza MIT** · CI su GitHub Actions · 186 test backend · TypeScript strict a 0 errori
+**Licenza MIT** · CI su GitHub Actions · oltre 200 test backend · TypeScript strict a 0 errori
 
 [![CI](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ci.yml)
 [![E2E](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml)
@@ -32,6 +32,28 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 | **iPhone / iPad** | Simulatore con Mac, firma gratuita (7 giorni) o TestFlight. Apple richiede una firma: **non esiste un'installazione iOS gratuita in 5 minuti**. |
 | **Tablet** | Stessa app: layout responsive a due colonne, rotazione portrait/landscape, nessuna build separata. |
 | **Sviluppo** | Backend + `npx expo start`; guida rapida in [`docs/QUICKSTART.md`](docs/QUICKSTART.md). |
+
+### Un comando solo (Windows)
+
+Su un PC Windows pulito, PowerShell installa tutto: scarica il progetto, crea la
+venv, installa backend e frontend, prepara `.env` e costruisce la web app.
+
+```powershell
+irm https://raw.githubusercontent.com/AhsenKurtoski/atlas-ai/main/scripts/setup.ps1 | iex
+```
+
+Se il progetto è già presente, doppio clic su **`setup.bat`** oppure:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1          # installa/aggiorna
+powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1 -Root .   # avvio automatico
+powershell -ExecutionPolicy Bypass -File scripts\verify.ps1         # test + typecheck
+```
+
+Gli script sono idempotenti: si possono rilanciare dopo un aggiornamento senza
+perdere `.env`, database locale o backup.
+Dopo l'installazione: `backend\start-atlas.bat` avvia backend (`:8010`) e web app
+(`:19007`); apri quell'indirizzo in Safari e scegli **Aggiungi a Home**.
 
 La guida passo-passo, i limiti della firma iOS e la risoluzione dei problemi sono in
 **[docs/INSTALL.md](docs/INSTALL.md)**, **[docs/IOS.md](docs/IOS.md)** e
@@ -79,7 +101,7 @@ te lo dice esplicitamente invece di fingere che sia tutto attivo.
 ┌──────────────────────────────┐      HTTP / JSON       ┌─────────────────────────────────────────┐
 │   APP MOBILE                 │ ─────────────────────▶ │  BACKEND FASTAPI (Python 3.11-3.13)     │
 │   React Native · Expo 51     │  Bearer token firmato  │                                         │
-│   NativeWind / Tailwind      │ ◀───────────────────── │  - 37 endpoint REST                     │
+│   NativeWind / Tailwind      │ ◀───────────────────── │  - 45 endpoint REST                     │
 │   AsyncStorage (persistenza) │   Chat + Pin + Push    │  - 50 tool reali per Gemini             │
 │   React Navigation 6         │                        │  - 10 tool browser (Chromium headless)  │
 │   expo-notifications         │                        │  - Auth PIN bcrypt + token HMAC 8h      │
@@ -167,6 +189,7 @@ eas build --profile development --platform android
 | `APP_ENV` | `development` / `production` | `development` |
 | `ATLAS_SECRET_KEY` | Segreto firma token (generato se assente) | auto |
 | `TOKEN_TTL_HOURS` | Durata sessione | `8` |
+| `ATLAS_BACKUP_PASSWORD` | Chiave dei backup cifrati (se assente usa `ATLAS_SECRET_KEY`) | *(vuoto)* |
 | `CORS_ALLOWED_ORIGINS` | Origini per la preview web | `*` |
 | `CORS_ALLOWED_ORIGIN_REGEX` | Origini con IP variabile (web app in LAN) | loopback + IP privati su `:19007` |
 | `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` | Database remoto (alias `SUPABASE_SERVICE_ROLE_KEY`) | *(vuoto = locale)* |
@@ -207,7 +230,13 @@ Expo Go, poi `10.0.2.2` su emulatore Android, poi `localhost`.
 | **Cambio PIN = revoca sessioni**: le sessioni aperte di quel profilo ricevono 401 subito (`pin_version` nel token) | ✅ |
 | **PIN demo rifiutati in produzione** (login e cambio PIN), anche se un backup vecchio li reintroduce | ✅ |
 | **Fail closed**: in produzione, se `profiles.json` manca/è corrotto/parziale nessun profilo viene caricato | ✅ |
-| **Backup automatico** di `_local_db` all'avvio e ogni 6 ore, ultimi 14 archivi in `backend/_backups` | ✅ |
+| **Codice di recupero personale** (16 caratteri, hash bcrypt, monouso): ogni membro reimposta il PIN da solo, senza l'amministratore | ✅ |
+| **Blocco progressivo** dopo PIN errati: 5 → 1 min, 6 → 2 min, 7 → 5 min, 8+ → 15 min; un accesso riuscito azzera il contatore | ✅ |
+| **Registro accessi** (chi, quando, IP, dispositivo) consultabile da Impostazioni → Sicurezza | ✅ |
+| **Esci da tutti i dispositivi**: `POST /auth/logout-tutti` avanza `pin_version` e invalida ogni token del profilo | ✅ |
+| **Blocco automatico** dell'app dopo 5 minuti di inattività o al ritorno dal background (PIN richiesto) | ✅ |
+| **Backup cifrati** (AES/Fernet) di `_local_db` all'avvio e ogni 6 ore, ultimi 14 archivi in `backend/_backups` | ✅ |
+| **Privacy**: informativa in-app, esportazione JSON dei propri dati, cancellazione del proprio profilo (il profilo `io` non può auto-eliminarsi) | ✅ |
 | **CORS chiuso di default** in produzione: solo le origini elencate in `CORS_ALLOWED_ORIGINS` | ✅ |
 | **Protezione SSRF** su fetch web e browser (DNS su navigazioni, XHR, iframe e immagini) | ✅ |
 | **Prompt injection**: il testo delle pagine è trattato come dato non attendibile | ✅ |
@@ -271,7 +300,7 @@ lo dice e spiega come attivarlo.
 ## 🧪 Qualità & test
 
 ```bash
-cd backend && pytest -q          # 186 test (18 browser Chromium reali + 2 test del loop agente)
+cd backend && pytest -q          # oltre 200 test (browser Chromium reale + loop agente)
 cd frontend && npm run typecheck  # 0 errori (strict)
 cd frontend && npm run test:e2e   # login + lista spesa nel browser (backend su :8010)
 ```
@@ -296,6 +325,8 @@ i test Playwright su ogni push.
 | `test_browser.py` | Chromium reale: navigazione, click, form, select, scroll, storia, sessioni isolate, DNS su XHR/iframe/immagini, SSRF |
 | `test_ai_loop.py` | loop Gemini con client finto: tool multipli, risposte function-response, limite turni |
 | `test_reminders.py` | parser italiano ("verso le 4-5"), persistenza, API, scheduler push/local |
+| `test_profiles_hardening.py` | fail closed, PIN demo, cambio PIN admin, backup cifrati, CORS |
+| `test_security_phase1.py` | recupero con codice, blocco progressivo, registro accessi, revoca sessioni, privacy, backup cifrati |
 
 ---
 
@@ -311,7 +342,8 @@ atlas-ai/
 │   │   ├── notifiche.py        # Expo Push / FCM
 │   │   ├── core/
 │   │   │   ├── database.py     # Supabase + fallback locale (todo, budget, token, settings)
-│   │   │   ├── security.py     # bcrypt + token HMAC
+│   │   │   ├── security.py     # bcrypt + token HMAC + codici di recupero
+│   │   │   ├── auth_guard.py   # blocco progressivo + registro accessi
 │   │   │   ├── settings.py     # env centralizzate con alias
 │   │   │   ├── net_guard.py    # protezione SSRF per i fetch web
 │   │   │   ├── scheduler_lock.py  # un solo worker esegue i job
@@ -319,17 +351,21 @@ atlas-ai/
 │   │   │   └── logging_config.py
 │   │   ├── services/
 │   │   │   ├── google_oauth.py # OAuth Gmail/Calendar
+│   │   │   ├── privacy.py      # export dati + cancellazione profilo
+│   │   │   ├── backup.py       # backup cifrati + ripristino
 │   │   │   └── browser.py      # agente Chromium: worker, sessioni, SSRF
 │   │   └── tools/              # 50 tool (browser, family, finance, travel, utility, MCP, italiano)
-│   ├── tests/                  # 186 test
+│   ├── tests/                  # oltre 200 test
 │   └── supabase_schema.sql
+├── scripts/                    # setup, verifica e autostart (Windows)
+├── setup.bat                   # doppio clic: installazione completa
 └── frontend/
     ├── App.tsx                 # AuthContext, sessione, navigazione, notifiche
     └── src/
         ├── config.ts
         ├── services/api.ts     # client tipizzato + gestione 401
         ├── services/notifications.ts
-        └── screens/            # Profile · Home · Chat · Italiano · Budget · Impostazioni
+        └── screens/            # Profile · Home · Chat · Italiano · Budget · Impostazioni · Lock
 ```
 
 ---
@@ -341,6 +377,10 @@ atlas-ai/
 - **Sicurezza**: segnalazioni private secondo [SECURITY.md](SECURITY.md); non aprire issue pubbliche per le vulnerabilità.
 - **CI**: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) esegue `pytest` e `tsc --noEmit`; [`e2e.yml`](.github/workflows/e2e.yml) esegue gli smoke test Playwright; [`ios-build.yml`](.github/workflows/ios-build.yml) compila l'app iOS per simulatore.
 - **Nessun segreto nel repo**: `.env` e `_local_db/` sono ignorati; usa `.env.example` come modello.
+- **Architettura e flussi**: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+- **Riferimento API** (45 endpoint, esempi curl): [`docs/API.md`](docs/API.md).
+- **Privacy e tempi di conservazione**: [`docs/PRIVACY.md`](docs/PRIVACY.md).
+- **Changelog**: [`CHANGELOG.md`](CHANGELOG.md).
 - **Agente browser**: architettura, tool e limiti in [`docs/BROWSER.md`](docs/BROWSER.md).
 - **Guida di test passo-passo**: [`docs/TESTING_GUIDE.md`](docs/TESTING_GUIDE.md).
 - **Installazione Android/iOS/tablet**: [`docs/INSTALL.md`](docs/INSTALL.md).

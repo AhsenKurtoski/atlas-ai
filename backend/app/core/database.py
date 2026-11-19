@@ -706,6 +706,8 @@ def fetch_profiles() -> dict[str, dict]:
             "livello_italiano": row.get("livello_italiano", "B1"),
             "pin_hash": row.get("pin_hash"),
             "pin_version": row.get("pin_version") or 0,
+            "recovery_hash": row.get("recovery_hash"),
+            "recovery_created_at": row.get("recovery_created_at"),
         }
     return profiles or _local_profiles()
 
@@ -722,8 +724,13 @@ def upsert_profile(
     livello_italiano: str = "B1",
     pin_hash: Optional[str] = None,
     pin_version: Optional[int] = None,
+    recovery_hash: Optional[str] = None,
 ) -> dict | None:
-    """Crea o aggiorna un profilo famiglia."""
+    """Crea o aggiorna un profilo famiglia.
+
+    `recovery_hash`: None lascia invariato il codice di recupero, stringa
+    vuota lo cancella (codice monouso già usato).
+    """
     client = get_client()
     if client is None:
         return None
@@ -737,6 +744,9 @@ def upsert_profile(
         data["pin_hash"] = pin_hash
     if pin_version is not None:
         data["pin_version"] = int(pin_version)
+    if recovery_hash is not None:
+        data["recovery_hash"] = recovery_hash or None
+        data["recovery_created_at"] = _now_iso() if recovery_hash else None
     client.table("profiles").upsert(data, on_conflict="slug").execute()
     log.info("Profilo salvato: %s (%s)", slug, nome)
     return data
@@ -749,6 +759,7 @@ def _fb_upsert_profile(
     livello_italiano: str = "B1",
     pin_hash: Optional[str] = None,
     pin_version: Optional[int] = None,
+    recovery_hash: Optional[str] = None,
 ) -> dict:
     profiles = _local_profiles()
     existing = profiles.get(slug, {})
@@ -761,6 +772,12 @@ def _fb_upsert_profile(
         "pin_version": int(pin_version)
         if pin_version is not None
         else int(existing.get("pin_version") or 0),
+        "recovery_hash": existing.get("recovery_hash") if recovery_hash is None else (recovery_hash or None),
+        "recovery_created_at": (
+            existing.get("recovery_created_at")
+            if recovery_hash is None
+            else (_now_iso() if recovery_hash else None)
+        ),
     }
     profiles[slug] = profile
     _local_profiles_write(profiles)
@@ -1162,6 +1179,105 @@ def get_italian_leaderboard() -> list[dict]:
 
 def _fb_get_italian_leaderboard() -> list[dict]:
     return _build_leaderboard(_fallback_read("italian_progress", []))
+
+
+# ====================================================================
+#  PRIVACY: esportazione e cancellazione dei dati personali
+# ====================================================================
+# Tabelle con dati personali del singolo profilo (le liste condivise della
+# famiglia — todo e spese — restano, ma senza il collegamento alla persona).
+_PERSONAL_TABLES: tuple[tuple[str, str], ...] = (
+    ("messages", "profile_slug"),
+    ("family_reminders", "profile_slug"),
+    ("italian_progress", "profile_slug"),
+    ("push_tokens", "profile_slug"),
+)
+_SHARED_TABLES: tuple[tuple[str, str], ...] = (
+    ("family_todos", "created_by_slug"),
+    ("family_expenses", "created_by_slug"),
+)
+
+
+def _fb_rows_for(table: str, column: str, slug: str) -> list[dict]:
+    rows = _fallback_read(table, [])
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if row.get(column) == slug]
+
+
+def export_profile_rows(profile_slug: str) -> dict[str, list[dict]]:
+    """Tutte le righe riconducibili a un profilo, per l'esportazione GDPR."""
+    client = get_client()
+    if client is None:
+        return {
+            table: _fb_rows_for(table, column, profile_slug)
+            for table, column in _PERSONAL_TABLES + _SHARED_TABLES
+        }
+    result: dict[str, list[dict]] = {}
+    for table, column in _PERSONAL_TABLES + _SHARED_TABLES:
+        try:
+            response = client.table(table).select("*").eq(column, profile_slug).execute()
+            result[table] = list(response.data or [])
+        except Exception as exc:  # pragma: no cover - rete
+            log.warning("Esportazione %s fallita: %s", table, exc)
+            result[table] = []
+    return result
+
+
+def delete_personal_data(profile_slug: str) -> dict[str, int]:
+    """Cancella i dati personali e scollega quelli condivisi dalla famiglia.
+
+    Ritorna quante righe sono state rimosse/anonimizzate per tabella.
+    """
+    client = get_client()
+    if client is None:
+        return _fb_delete_personal_data(profile_slug)
+    counts: dict[str, int] = {}
+    for table, column in _PERSONAL_TABLES:
+        try:
+            response = client.table(table).delete().eq(column, profile_slug).execute()
+            counts[table] = len(response.data or [])
+        except Exception as exc:  # pragma: no cover - rete
+            log.warning("Cancellazione %s fallita: %s", table, exc)
+            counts[table] = 0
+    for table, column in _SHARED_TABLES:
+        try:
+            response = (
+                client.table(table)
+                .update({column: "famiglia"})
+                .eq(column, profile_slug)
+                .execute()
+            )
+            counts[table] = len(response.data or [])
+        except Exception as exc:  # pragma: no cover - rete
+            log.warning("Anonimizzazione %s fallita: %s", table, exc)
+            counts[table] = 0
+    return counts
+
+
+def _fb_delete_personal_data(profile_slug: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for table, column in _PERSONAL_TABLES:
+        rows = _fallback_read(table, [])
+        if not isinstance(rows, list):
+            rows = []
+        rimaste = [row for row in rows if row.get(column) != profile_slug]
+        counts[table] = len(rows) - len(rimaste)
+        if counts[table]:
+            _fallback_write(table, rimaste)
+    for table, column in _SHARED_TABLES:
+        rows = _fallback_read(table, [])
+        if not isinstance(rows, list):
+            rows = []
+        changed = 0
+        for row in rows:
+            if row.get(column) == profile_slug:
+                row[column] = "famiglia"
+                changed += 1
+        counts[table] = changed
+        if changed:
+            _fallback_write(table, rows)
+    return counts
 
 
 # ====================================================================
