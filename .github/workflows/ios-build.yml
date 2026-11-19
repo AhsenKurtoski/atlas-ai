@@ -40,16 +40,25 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_16.2.app
           xcodebuild -version
 
-      - name: Installa il runtime iOS 18.2 per Xcode 16.2
+      - name: Verifica o installa il runtime iOS del simulatore
         run: |
+          # Le immagini macos-15 hanno spesso già un runtime iOS: usarlo evita
+          # un download da Apple che può fallire o essere limitato. Se manca,
+          # scarichiamo il runtime supportato da questa Xcode (senza fissare
+          # una versione, che cambia con le immagini dei runner).
+          if xcrun simctl list runtimes | grep -qi 'iOS '; then
+            echo "Runtime iOS già disponibile:"
+            xcrun simctl list runtimes | grep -i 'iOS '
+            exit 0
+          fi
           for attempt in 1 2 3; do
-            if sudo xcodebuild -downloadPlatform iOS -buildVersion 18.2; then
+            if sudo xcodebuild -downloadPlatform iOS; then
               break
             fi
             echo "Download runtime fallito (tentativo $attempt), riprovo..."
-            sleep 10
+            sleep 15
           done
-          xcrun simctl list runtimes | grep -i 'iOS 18.2'
+          xcrun simctl list runtimes | grep -i 'iOS '
 
       - name: Installa dipendenze
         run: npm ci

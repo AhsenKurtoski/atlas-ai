@@ -1,0 +1,42 @@
+version: 2
+
+# Aggiornamenti di sicurezza e di versione settimanali, raggruppati per
+# ecosistema per non generare decine di pull request separate.
+updates:
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      backend:
+        patterns: ["*"]
+    labels: ["dependencies", "backend"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      frontend:
+        patterns: ["*"]
+    labels: ["dependencies", "frontend"]
+    # Expo SDK 51: gli aggiornamenti major vanno fatti con una migrazione
+    # dedicata, non in automatico.
+    ignore:
+      - dependency-name: "expo"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-native"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: ["dependencies", "ci"]
