@@ -19,7 +19,7 @@ jobs:
   build-ios-simulator:
     name: Build iOS simulator app
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: frontend
@@ -42,23 +42,30 @@ jobs:
 
       - name: Verifica o installa il runtime iOS del simulatore
         run: |
-          # Le immagini macos-15 hanno spesso già un runtime iOS: usarlo evita
-          # un download da Apple che può fallire o essere limitato. Se manca,
-          # scarichiamo il runtime supportato da questa Xcode (senza fissare
-          # una versione, che cambia con le immagini dei runner).
-          if xcrun simctl list runtimes | grep -qi 'iOS '; then
-            echo "Runtime iOS già disponibile:"
-            xcrun simctl list runtimes | grep -i 'iOS '
+          # Il runtime deve corrispondere all'SDK dell'Xcode selezionato: un
+          # "iOS qualsiasi" non basta (Xcode 16.2 richiede iOS 18.2 e con un
+          # runtime diverso xcodebuild non trova la destination).
+          SDK_VERSION=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          echo "SDK simulatore richiesto: iOS $SDK_VERSION"
+          if xcrun simctl list runtimes | grep -q "iOS $SDK_VERSION"; then
+            echo "Runtime iOS $SDK_VERSION già disponibile:"
+            xcrun simctl list runtimes | grep "iOS $SDK_VERSION"
             exit 0
           fi
           for attempt in 1 2 3; do
-            if sudo xcodebuild -downloadPlatform iOS; then
+            if sudo xcodebuild -downloadPlatform iOS -buildVersion "$SDK_VERSION" \
+              || sudo xcodebuild -downloadPlatform iOS; then
               break
             fi
             echo "Download runtime fallito (tentativo $attempt), riprovo..."
-            sleep 15
+            sleep 30
           done
-          xcrun simctl list runtimes | grep -i 'iOS '
+          if ! xcrun simctl list runtimes | grep -q "iOS $SDK_VERSION"; then
+            echo "::error::Runtime iOS $SDK_VERSION non disponibile per Xcode $(xcodebuild -version | head -n 1)"
+            xcrun simctl list runtimes
+            exit 1
+          fi
+          xcrun simctl list runtimes | grep "iOS $SDK_VERSION"
 
       - name: Installa dipendenze
         run: npm ci
