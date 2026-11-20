@@ -7,6 +7,21 @@ Expo SDK 57 · React Native 0.86 · React 19.2 · TypeScript 6 strict · NativeW
 
 ---
 
+## 🔒 Dipendenze forzate (`overrides`)
+
+Tre override npm sono intenzionali; vanno rivalidati quando si aggiornano le
+librerie coinvolte:
+
+| Override | Perché | Come verificare |
+|---|---|---|
+| `react-native-markdown-display` → `markdown-it@^14` | la v10 importa il core Node `punycode` (Metro non lo risolve su Android/iOS) e ha 2 advisory high | aprire la chat e controllare titoli, grassetto, link, liste |
+| `markdown-it` → `linkify-it@^5.0.2` | chiude le advisory di linkify-it usate dal renderer | `npm audit --omit=dev` |
+| `@expo/fingerprint`, `glob` → `minimatch@^11.0.9` | l'advisory riguarda `<= 11.0.0` | `npx expo-doctor` + `expo export` |
+
+`npm audit --omit=dev` deve restare a **0**; se un aggiornamento rompe il
+rendering markdown o il bundle nativo, aggiornare prima la libreria e poi
+rimuovere l'override corrispondente.
+
 ## 📋 Prerequisiti
 
 - **Node.js 22.13+** (richiesto da Expo SDK 57)

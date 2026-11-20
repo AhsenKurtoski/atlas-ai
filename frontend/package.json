@@ -48,8 +48,17 @@
   },
   "private": true,
   "overrides": {
-    "minimatch": "^11.0.9",
-    "markdown-it": "^14.3.2",
-    "linkify-it": "^5.0.2"
+    "markdown-it": {
+      "linkify-it": "^5.0.2"
+    },
+    "react-native-markdown-display": {
+      "markdown-it": "^14.3.2"
+    },
+    "@expo/fingerprint": {
+      "minimatch": "^11.0.9"
+    },
+    "glob": {
+      "minimatch": "^11.0.9"
+    }
   }
 }
