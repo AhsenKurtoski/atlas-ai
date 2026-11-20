@@ -49,12 +49,16 @@ jobs:
         working-directory: frontend/android
         run: |
           set -o pipefail
+          set +e
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/atlas-gradle.log
           STATUS=$?
           if [ "$STATUS" -ne 0 ]; then
-            SUMMARY=$(grep -E "^e: |error:|FAILURE:|What went wrong|Caused by:|Execution failed|Could not" /tmp/atlas-gradle.log | tail -10 | tr '\n' ' ' | cut -c1-1800)
-            echo "::error::Gradle fallito (exit $STATUS): ${SUMMARY:-nessun dettaglio estratto}"
+            SUMMARY=$(grep -E "^e: |error:|FAILURE:|What went wrong|Caused by:|Execution failed|Could not|> Task" /tmp/atlas-gradle.log | tail -12 | tr '\n' ' ' | cut -c1-1800)
+            if [ -z "$SUMMARY" ]; then
+              SUMMARY=$(tail -25 /tmp/atlas-gradle.log | tr '\n' ' ' | cut -c1-1800)
+            fi
+            echo "::error::Gradle fallito (exit $STATUS): $SUMMARY"
             exit "$STATUS"
           fi
 
