@@ -242,6 +242,7 @@ Expo Go, poi `10.0.2.2` su emulatore Android, poi `localhost`.
 | **Sessioni browser isolate per profilo** (cookie/pagine separati, TTL 15 min) | ✅ |
 | **Scheduler a istanza singola** via lock di processo (niente notifiche duplicate) | ✅ |
 | Token push morti disattivati automaticamente (`DeviceNotRegistered`) | ✅ |
+| **Toolchain supportata**: Expo SDK 57 (RN 0.86, React 19.2), React Navigation 7, NativeWind 4; `npm audit` da 51 a **3** segnalazioni (solo transitive di `react-native-markdown-display`, senza fix upstream) | ✅ |
 
 ---
 
