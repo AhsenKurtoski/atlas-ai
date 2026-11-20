@@ -82,7 +82,7 @@ jobs:
           set -o pipefail
           set +e
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/atlas-gradle.log
+          ./gradlew assembleRelease --no-daemon --stacktrace --info 2>&1 | tee /tmp/atlas-gradle.log
           STATUS=$?
           if [ "$STATUS" -ne 0 ]; then
             # Il messaggio utile sta nelle righe immediatamente successive a
@@ -93,8 +93,8 @@ jobs:
             fi
             # Contesto: le righe prima dell'errore contengono l'output di Node/Metro.
             CONTEXT=$(grep -B 30 "What went wrong" /tmp/atlas-gradle.log | tr '\n' ' ' | cut -c1-900)
-            STACK=$(grep -A 80 "What went wrong" /tmp/atlas-gradle.log | head -100 | tr '\n' ' ' | cut -c1-2200)
-            SUMMARY="$SUMMARY || CONTESTO: $CONTEXT || STACK: $STACK"
+            NODEEXEC=$(grep -B 2 -A 8 "Starting process 'command 'node''" /tmp/atlas-gradle.log | tail -60 | tr '\n' ' ' | cut -c1-2600)
+            SUMMARY="$SUMMARY || CONTESTO: $CONTEXT || NODE EXEC: $NODEEXEC"
             echo "::error::Gradle fallito (exit $STATUS): $SUMMARY"
             exit "$STATUS"
           fi
