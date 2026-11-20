@@ -47,8 +47,8 @@ jobs:
       - name: Verifica o installa il runtime iOS del simulatore
         run: |
           # Il runtime deve corrispondere all'SDK dell'Xcode selezionato: un
-          # "iOS qualsiasi" non basta (Xcode 16.2 richiede iOS 18.2 e con un
-          # runtime diverso xcodebuild non trova la destination).
+          # "iOS qualsiasi" non basta, altrimenti xcodebuild non trova la
+          # destination e la build fallisce.
           SDK_VERSION=$(xcrun --sdk iphonesimulator --show-sdk-version)
           echo "SDK simulatore richiesto: iOS $SDK_VERSION"
           if xcrun simctl list runtimes | grep -q "iOS $SDK_VERSION"; then

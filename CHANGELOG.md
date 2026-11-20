@@ -27,6 +27,14 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e
 - CI: Node 22, iOS su `macos-latest` con la Xcode più recente e runtime del simulatore
   scelto in base all'SDK della Xcode installata.
 
+### Rimosso
+
+- `expo-blur`: dichiarato ma mai importato.
+- `frontend/index.ts`: entry morto (`main` è `expo/AppEntry.js`).
+- CI Android: heap Node forzato (non era la causa del fallimento), `--info`
+  sulla build e bundle JS duplicato; il log Gradle ora si carica solo se il job
+  fallisce. `setup-java` aggiornato a v5 (v4 deprecato).
+
 ### Corretto
 
 - `SafeAreaView` core non applica `className` su RN 0.86/web: lo sfondo scuro ora
