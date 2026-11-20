@@ -47,6 +47,11 @@ jobs:
 
       - name: Compila APK
         working-directory: frontend/android
+        env:
+          # Il bundle release di RN 0.86 supera l'heap Node predefinito sui
+          # runner da 7 GB: senza questo il task Gradle esce con "command node
+          # finished with non-zero exit value 1" senza altro dettaglio.
+          NODE_OPTIONS: "--max-old-space-size=4096"
         run: |
           set -o pipefail
           set +e
