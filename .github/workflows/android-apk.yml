@@ -43,33 +43,12 @@ jobs:
         run: npx expo prebuild --platform android --no-install
 
       - name: Aumenta la memoria di Gradle
-        run: echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
-
-      - name: Diagnostica risoluzione React Native (stessa chiamata di Expo)
-        working-directory: frontend/android
         run: |
-          set +e
-          echo "node: $(command -v node) $(node -v)"
-          ls -l ../node_modules/react-native/package.json
-          OUT=$(node --print "require.resolve('react-native/package.json')" 2>&1)
-          STATUS=$?
-          echo "uscita node ($STATUS): $OUT"
-          if [ "$STATUS" -ne 0 ]; then
-            echo "::error::node non risolve react-native/package.json (exit $STATUS): $(echo "$OUT" | tr '\n' ' ' | cut -c1-1500)"
-            exit "$STATUS"
-          fi
-
-      - name: Bundle JS Android (diagnostica)
-        run: |
-          set +e
-          npx expo export:embed --platform android --dev false \
-            --bundle-output /tmp/atlas-android.bundle \
-            --assets-dest /tmp/atlas-android-assets > /tmp/atlas-embed.log 2>&1
-          STATUS=$?
-          if [ "$STATUS" -ne 0 ]; then
-            echo "::error::Bundle JS Android fallito ($STATUS): $(tail -25 /tmp/atlas-embed.log | tr '\n' ' ' | cut -c1-1800)"
-            exit "$STATUS"
-          fi
+          # Il file generato da SDK 57 non termina con newline: un semplice
+          # `echo >>` concatenerebbe la riga all'ultima proprietà (e ai comandi
+          # node lanciati da Gradle, che fallivano con exit 1).
+          printf '\norg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m\n' >> android/gradle.properties
+          tail -2 android/gradle.properties
 
       - name: Compila APK
         working-directory: frontend/android
@@ -82,7 +61,7 @@ jobs:
           set -o pipefail
           set +e
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace --info 2>&1 | tee /tmp/atlas-gradle.log
+          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/atlas-gradle.log
           STATUS=$?
           if [ "$STATUS" -ne 0 ]; then
             # Il messaggio utile sta nelle righe immediatamente successive a
@@ -92,8 +71,8 @@ jobs:
               SUMMARY=$(tail -30 /tmp/atlas-gradle.log | tr '\n' ' ' | cut -c1-1800)
             fi
             # Contesto: le righe prima dell'errore contengono l'output di Node/Metro.
-            CONTEXT=$(grep -B 60 "What went wrong" /tmp/atlas-gradle.log | head -70 | tr '\n' ' ' | cut -c1-6000)
-            SUMMARY="$SUMMARY || PRIMA DELL'ERRORE: $CONTEXT"
+            CONTEXT=$(grep -B 12 "What went wrong" /tmp/atlas-gradle.log | tail -14 | tr '\n' ' ' | cut -c1-1500)
+            SUMMARY="$SUMMARY || CONTESTO: $CONTEXT"
             echo "::error::Gradle fallito (exit $STATUS): $SUMMARY"
             exit "$STATUS"
           fi
