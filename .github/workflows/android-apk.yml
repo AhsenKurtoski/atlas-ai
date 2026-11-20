@@ -45,6 +45,18 @@ jobs:
       - name: Aumenta la memoria di Gradle
         run: echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
 
+      - name: Bundle JS Android (diagnostica)
+        run: |
+          set +e
+          npx expo export:embed --platform android --dev false \
+            --bundle-output /tmp/atlas-android.bundle \
+            --assets-dest /tmp/atlas-android-assets > /tmp/atlas-embed.log 2>&1
+          STATUS=$?
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::error::Bundle JS Android fallito ($STATUS): $(tail -25 /tmp/atlas-embed.log | tr '\n' ' ' | cut -c1-1800)"
+            exit "$STATUS"
+          fi
+
       - name: Compila APK
         working-directory: frontend/android
         env:
