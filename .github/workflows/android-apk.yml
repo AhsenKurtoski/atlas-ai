@@ -93,8 +93,8 @@ jobs:
             fi
             # Contesto: le righe prima dell'errore contengono l'output di Node/Metro.
             CONTEXT=$(grep -B 30 "What went wrong" /tmp/atlas-gradle.log | tr '\n' ' ' | cut -c1-900)
-            NODEEXEC=$(grep -B 2 -A 8 "Starting process 'command 'node''" /tmp/atlas-gradle.log | tail -60 | tr '\n' ' ' | cut -c1-2600)
-            SUMMARY="$SUMMARY || CONTESTO: $CONTEXT || NODE EXEC: $NODEEXEC"
+            TAIL=$(tail -n 80 /tmp/atlas-gradle.log | tr '\n' ' ' | cut -c1-6000)
+            SUMMARY="$SUMMARY || CODA: $TAIL"
             echo "::error::Gradle fallito (exit $STATUS): $SUMMARY"
             exit "$STATUS"
           fi
