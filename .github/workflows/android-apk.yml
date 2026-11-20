@@ -45,6 +45,20 @@ jobs:
       - name: Aumenta la memoria di Gradle
         run: echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
 
+      - name: Diagnostica risoluzione React Native (stessa chiamata di Expo)
+        working-directory: frontend/android
+        run: |
+          set +e
+          echo "node: $(command -v node) $(node -v)"
+          ls -l ../node_modules/react-native/package.json
+          OUT=$(node --print "require.resolve('react-native/package.json')" 2>&1)
+          STATUS=$?
+          echo "uscita node ($STATUS): $OUT"
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::error::node non risolve react-native/package.json (exit $STATUS): $(echo "$OUT" | tr '\n' ' ' | cut -c1-1500)"
+            exit "$STATUS"
+          fi
+
       - name: Bundle JS Android (diagnostica)
         run: |
           set +e
