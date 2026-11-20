@@ -60,6 +60,9 @@ jobs:
             if [ -z "$SUMMARY" ]; then
               SUMMARY=$(tail -30 /tmp/atlas-gradle.log | tr '\n' ' ' | cut -c1-1800)
             fi
+            # Contesto: le righe prima dell'errore contengono l'output di Node/Metro.
+            CONTEXT=$(grep -B 30 "What went wrong" /tmp/atlas-gradle.log | tr '\n' ' ' | cut -c1-1500)
+            SUMMARY="$SUMMARY || CONTESTO: $CONTEXT"
             echo "::error::Gradle fallito (exit $STATUS): $SUMMARY"
             exit "$STATUS"
           fi
