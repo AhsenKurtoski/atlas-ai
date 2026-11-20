@@ -100,10 +100,10 @@ te lo dice esplicitamente invece di fingere che sia tutto attivo.
 ```
 ┌──────────────────────────────┐      HTTP / JSON       ┌─────────────────────────────────────────┐
 │   APP MOBILE                 │ ─────────────────────▶ │  BACKEND FASTAPI (Python 3.11-3.13)     │
-│   React Native · Expo 51     │  Bearer token firmato  │                                         │
+│   React Native · Expo 57     │  Bearer token firmato  │                                         │
 │   NativeWind / Tailwind      │ ◀───────────────────── │  - 50 endpoint REST                     │
 │   AsyncStorage (persistenza) │   Chat + Pin + Push    │  - 50 tool reali per Gemini             │
-│   React Navigation 6         │                        │  - 10 tool browser (Chromium headless)  │
+│   React Navigation 7         │                        │  - 10 tool browser (Chromium headless)  │
 │   expo-notifications         │                        │  - Auth PIN bcrypt + token HMAC 8h      │
 └──────────────────────────────┘                        │  - 12 automazioni APScheduler           │
                                                         │  - DB: Supabase ▶ fallback JSON locale  │
@@ -157,12 +157,10 @@ npm install
 npx expo start
 ```
 
-> ⚠️ **Compatibilità Expo Go**: il progetto usa **Expo SDK 51**. L'Expo Go degli store
-> supporta solo l'SDK più recente, quindi per provarlo su un telefono serve una
-> **development build** (`eas build --profile development`) o un client Expo Go per
-> SDK 51 (emulatori). Per pubblicare sugli store oggi conviene pianificare l'upgrade
-> a SDK 57/58: è una migrazione separata (React Native/Reanimated/expo-av), non inclusa
-> in questo intervento.
+> ⚠️ **Compatibilità Expo Go**: il progetto usa **Expo SDK 57** (React Native 0.86,
+> React 19.2, React Navigation 7, NativeWind 4). Se l'Expo Go installato non è
+> allineato all'SDK 57, usa una **development build**
+> (`eas build --profile development`). La web app su `:19007` non richiede Expo Go.
 
 ```bash
 npm install -g eas-cli

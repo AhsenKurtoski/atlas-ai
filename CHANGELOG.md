@@ -3,6 +3,33 @@
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e
 [Semantic Versioning](https://semver.org/lang/it/).
 
+## [3.3.0] — 2026-11-20
+
+### Cambiato — piattaforma
+
+- **Expo SDK 51 → 57** (React Native 0.74 → 0.86, React 18 → 19.2, TypeScript 6):
+  51 vulnerabilità di `npm audit` ridotte a **3** (restano solo quelle transitive di
+  `react-native-markdown-display`, senza fix disponibile upstream).
+- **React Navigation 6 → 7** (`native`, `bottom-tabs`, `native-stack`).
+- **NativeWind 2 → 4**: nuova pipeline Metro/Babel con `global.css`, preset Tailwind
+  e CSS reale sul web; verificato nel browser (fondo `#0a0a0f`, testi bianchi).
+- **expo-av → expo-audio** per la dettatura (hook `useAudioRecorder`).
+- `expo-file-system` usa l'API legacy esplicita (`expo-file-system/legacy`), come
+  richiesto da SDK 57 per `cacheDirectory`/base64.
+- Notifiche: trigger tipizzati (`DAILY`/`DATE`) e handler con
+  `shouldShowBanner`/`shouldShowList`.
+- Config: splash migrata al plugin `expo-splash-screen`, aggiunti `expo-asset` e
+  `expo-audio`; `baseUrl` rimosso dal `tsconfig` (deprecato in TypeScript 6).
+- Tema scuro esplicito per `NavigationContainer`: senza di esso il web mostrava il
+  fondo chiaro predefinito sotto i testi bianchi.
+- CI: Node 22, iOS su `macos-latest` con la Xcode più recente e runtime del simulatore
+  scelto in base all'SDK della Xcode installata.
+
+### Corretto
+
+- `SafeAreaView` core non applica `className` su RN 0.86/web: lo sfondo scuro ora
+  arriva dal tema di navigazione e dal CSS di base.
+
 ## [Non rilasciato]
 
 ### Aggiunto — sicurezza

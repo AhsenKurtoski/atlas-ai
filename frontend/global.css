@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Web: lo sfondo deve essere scuro anche prima che React monti la schermata,
+   così non compare un lampo bianco e i testi chiari restano leggibili. */
+@layer base {
+  html,
+  body,
+  #root {
+    background-color: #0a0a0f;
+    color: #ffffff;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+}

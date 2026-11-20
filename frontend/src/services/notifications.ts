@@ -35,14 +35,12 @@ export function configureNotifications(): void {
   if (Platform.OS === 'web') return;
   try {
     Notifications.setNotificationHandler({
-    handleNotification: async () =>
-      ({
-        shouldShowAlert: true,
+      handleNotification: async () => ({
         shouldPlaySound: true,
         shouldSetBadge: false,
         shouldShowBanner: true,
         shouldShowList: true,
-        } as any),
+      }),
     });
   } catch {
     // Piattaforma senza supporto notifiche: l'app resta utilizzabile.
@@ -197,11 +195,11 @@ export async function syncLocalReminders(enabled: boolean): Promise<void> {
           data: { tipo: 'promemoria_locale', chiave: reminder.key },
         },
         trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
           hour: reminder.hour,
           minute: reminder.minute,
-          repeats: true,
           channelId: CHANNEL_ID,
-        } as any,
+        },
       });
       ids.push(id);
     } catch {
@@ -351,7 +349,11 @@ export async function syncUpcomingReminders(): Promise<ReminderSyncResult> {
           sound: 'default',
           data: { tipo: 'promemoria', reminder_id: String(row.id) },
         },
-        trigger: { date: when, channelId: CHANNEL_ID } as any,
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: when,
+          channelId: CHANNEL_ID,
+        },
       });
       links.push({ reminderId: String(row.id), notificationId });
       await apiService.markReminderLocalScheduled(String(row.id)).catch(() => {});

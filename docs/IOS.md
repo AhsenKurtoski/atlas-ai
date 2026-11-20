@@ -1,11 +1,12 @@
 # 🍎 iOS, iPad e CI: guida completa
 
-ATLAS AI usa Expo SDK 51 e React Native 0.74. La stessa codebase gira su iPhone,
-iPad, Android e web. Questa pagina spiega cosa funziona davvero e come installarla.
+ATLAS AI usa Expo SDK 57 (React Native 0.86, React 19.2). La stessa codebase gira
+su iPhone, iPad, Android e web. Questa pagina spiega cosa funziona davvero e come
+installarla.
 
 ## Web app su iPhone, gratis e senza Expo Go
 
-Expo Go degli store non apre un progetto SDK 51; l'app però gira nel browser
+Expo Go degli store deve essere allineato a Expo SDK 57; l'app però gira nel browser
 sullo stesso codice React Native, quindi si può usare senza firma Apple.
 
 ```bash
@@ -30,9 +31,11 @@ Sul telefono, sulla stessa Wi-Fi del PC: `http://<IP-del-PC>:19007` in Safari �
 
 Workflow: [`.github/workflows/ios-build.yml`](../.github/workflows/ios-build.yml)
 
-- runner `macos-15`;
-- Xcode **16.2** (ultima versione compatibile con Expo SDK 51);
-- installa il runtime **iOS 18.2**, che GitHub non preinstalla più;
+- runner `macos-latest`;
+- usa la **Xcode più recente** presente nell'immagine del runner (SDK 57 richiede un
+  SDK iOS recente);
+- verifica il runtime del simulatore **corrispondente all'SDK di quella Xcode** e, se
+  manca, lo scarica;
 - esegue `expo prebuild --platform ios`, `pod install` e `xcodebuild` per
   `generic/platform=iOS Simulator`;
 - carica due artifact: `ATLAS-AI-ios-simulator.zip` (`.app` non firmata) e
@@ -127,16 +130,17 @@ condividere con un'altra app. Non richiede iCloud né servizi esterni.
 
 | Errore | Causa | Soluzione |
 |---|---|---|
-| `iOS 18.2 Platform Not Installed` | runtime non preinstallato su macOS 15 | la CI esegue `xcodebuild -downloadPlatform iOS -buildVersion 18.2` |
-| `TARGET_OS_SIMULATOR` in `expo-device` | Xcode 16.3+ non compatibile con SDK 51 | usa Xcode 16.2 (la CI lo fa) |
+| `iOS X.Y Platform Not Installed` | runtime non preinstallato sul runner | la CI scarica la versione esatta dell'SDK della Xcode selezionata |
 | `No signing certificate` | build per device senza team | configura Signing in Xcode o usa EAS |
 | `Sviluppatore non verificato` | firma gratuita | Impostazioni → Generali → VPN e gestione dispositivo → Trust |
 | Push non arrivano | manca APNs o sei sul simulatore | configura APNs e usa un device fisico |
 | `Network request failed` | backend non raggiungibile | usa HTTPS pubblico o `localhost` sul simulatore |
 
-## Versione futura
+## Versione SDK
 
-Expo SDK 51 è la versione attuale del progetto. Expo Go degli store supporta solo
-SDK recenti, quindi per il telefono serve una development build. L'aggiornamento a
-SDK 53+ è una migrazione separata (React Native, Reanimated, expo-av) e non è
-necessario per usare l'app oggi con TestFlight o firma locale.
+Il progetto usa **Expo SDK 57** (RN 0.86, React 19.2). Le librerie di stile
+(NativeWind 4) dichiarano supporto ufficiale fino a SDK 57: l'eventuale passaggio a
+SDK 58 va fatto insieme all'aggiornamento di NativeWind, non da solo.
+
+Per il telefono serve una development build o TestFlight: la web app su `:19007`
+resta la via più semplice per provare l'interfaccia senza firma Apple.

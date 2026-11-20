@@ -18,7 +18,7 @@ permissions:
 jobs:
   build-ios-simulator:
     name: Build iOS simulator app
-    runs-on: macos-15
+    runs-on: macos-latest
     timeout-minutes: 90
     defaults:
       run:
@@ -31,13 +31,17 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Seleziona Xcode compatibile con Expo SDK 51
+      - name: Seleziona l'ultima Xcode disponibile sul runner
         run: |
-          sudo xcode-select -s /Applications/Xcode_16.2.app
+          # Expo SDK 57 richiede l'SDK iOS recente: usiamo la Xcode più nuova
+          # dell'immagine runner invece di fissare una versione che invecchia.
+          XCODE_APP=$(ls -d /Applications/Xcode*.app | sort -V | tail -n 1)
+          echo "Uso $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP"
           xcodebuild -version
 
       - name: Verifica o installa il runtime iOS del simulatore

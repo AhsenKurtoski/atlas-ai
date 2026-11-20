@@ -39,7 +39,7 @@ ogni push; l'artifact è `ATLAS-AI-ios-simulator.zip`.
 
 ## Sviluppo locale completo (Windows/macOS/Linux)
 
-Prerequisiti: **Python 3.11–3.13**, **Node 20+**, Git. Chromium viene installato
+Prerequisiti: **Python 3.11–3.13**, **Node 22.13+**, Git. Chromium viene installato
 da Playwright.
 
 ```bash

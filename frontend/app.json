@@ -2,16 +2,11 @@
   "expo": {
     "name": "ATLAS AI",
     "slug": "atlas-ai",
-    "version": "3.2.0",
+    "version": "3.3.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "scheme": "atlasai",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0a0a0f"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.atlasai.family",
@@ -19,8 +14,12 @@
         "NSMicrophoneUsageDescription": "ATLAS usa il microfono per dettare i messaggi in chat.",
         "NSPhotoLibraryUsageDescription": "ATLAS usa la galleria per inviare foto alla chat AI.",
         "NSLocalNetworkUsageDescription": "ATLAS si connette al backend sulla rete locale per chat, foto e integrazioni.",
-        "NSAppTransportSecurity": { "NSAllowsLocalNetworking": true },
-        "UIBackgroundModes": ["remote-notification"]
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
@@ -56,7 +55,18 @@
         {
           "photosPermission": "ATLAS usa la galleria per inviare foto alla chat AI."
         }
-      ]
+      ],
+      "expo-audio",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#0a0a0f"
+        }
+      ],
+      "expo-asset"
     ]
   }
 }

@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Text, View } from 'react-native';
-import { NativeWindStyleSheet } from 'nativewind';
-import { NavigationContainer } from '@react-navigation/native';
+import './global.css';
+import { DarkTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -27,12 +27,23 @@ import {
   cancelUpcomingReminderNotifications,
 } from './src/services/notifications';
 
-// Expo web non carica il foglio CSS generato da NativeWind: usa gli stili
-// nativi inline anche nel browser, così la resa resta identica alle app mobile.
-NativeWindStyleSheet.setOutput({ default: 'native' });
-
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+// Tema scuro anche per i contenitori React Navigation: senza questo il web
+// mostrerebbe il fondo chiaro predefinito (#f2f2f2) sotto testi bianchi.
+const ATLAS_THEME = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    primary: '#7c3aed',
+    background: '#0a0a0f',
+    card: '#0a0a0f',
+    text: '#ffffff',
+    border: '#ffffff15',
+    notification: '#ef4444',
+  },
+};
 
 export interface ProfileInfo {
   slug: string;
@@ -348,7 +359,7 @@ export default function App() {
           }}
         />
       ) : (
-      <NavigationContainer onStateChange={touchActivity}>
+      <NavigationContainer theme={ATLAS_THEME} onStateChange={touchActivity}>
         {!ready ? (
           <View style={{ flex: 1, backgroundColor: '#0a0a0f', alignItems: 'center', justifyContent: 'center' }}>
             <ActivityIndicator color="#7c3aed" size="large" />

@@ -152,8 +152,8 @@ installare l'app su un iPhone fisico.
 
 ### D. Expo Go — solo per sviluppo rapido
 
-Il progetto usa **Expo SDK 51**. L'Expo Go degli store aggiorna solo l'SDK più
-recente, quindi potrebbe rifiutare il progetto. Per lo sviluppo quotidiano usa una
+Il progetto usa **Expo SDK 57**. L'Expo Go degli store deve essere aggiornato alla
+stessa versione, altrimenti rifiuta il progetto. Per lo sviluppo quotidiano usa una
 **development build**:
 
 ```bash

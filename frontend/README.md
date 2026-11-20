@@ -1,6 +1,6 @@
 # Frontend ATLAS AI — Guida tecnica
 
-Expo SDK 51 · React Native 0.74 · TypeScript strict · NativeWind (Tailwind 3.3) · React Navigation 6 · AsyncStorage
+Expo SDK 57 · React Native 0.86 · React 19.2 · TypeScript 6 strict · NativeWind 4 (Tailwind 3.4) · React Navigation 7 · AsyncStorage
 
 > **Installazione per utenti finali**: guida completa Android, iPhone, iPad e tablet in
 > [`../docs/INSTALL.md`](../docs/INSTALL.md).
@@ -9,7 +9,7 @@ Expo SDK 51 · React Native 0.74 · TypeScript strict · NativeWind (Tailwind 3.
 
 ## 📋 Prerequisiti
 
-- **Node.js 20+**
+- **Node.js 22.13+** (richiesto da Expo SDK 57)
 - `npm`
 - *Opzionale*: [Expo Go](https://expo.dev/go) su iOS/Android per provare l'app
 - *Opzionale*: Android Studio / Xcode per build native

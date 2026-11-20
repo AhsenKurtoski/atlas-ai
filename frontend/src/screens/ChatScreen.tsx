@@ -15,8 +15,13 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import Animated, { FadeInUp, FadeIn } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+} from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import Markdown from 'react-native-markdown-display';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -74,7 +79,7 @@ export default function ChatScreen({ route }: any) {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   // Se l'utente ha già scritto, la cronologia del server non deve sovrascrivere.
   const sentRef = useRef(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -153,18 +158,15 @@ export default function ChatScreen({ route }: any) {
   // Rilascia il microfono se si esce dalla schermata durante la registrazione.
   useEffect(() => {
     return () => {
-      const recording = recordingRef.current;
-      recordingRef.current = null;
-      if (recording) {
-        recording.stopAndUnloadAsync().catch(() => {});
-      }
+      // Ferma una registrazione rimasta attiva se si cambia schermata.
+      audioRecorder.stop().catch(() => {});
     };
-  }, []);
+  }, [audioRecorder]);
 
   const startRecording = async () => {
     if (isRecording || isTranscribing) return;
     try {
-      const permission = await Audio.requestPermissionsAsync();
+      const permission = await requestRecordingPermissionsAsync();
       if (!permission.granted) {
         Alert.alert(
           'Microfono non autorizzato',
@@ -172,9 +174,9 @@ export default function ChatScreen({ route }: any) {
         );
         return;
       }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      recordingRef.current = recording;
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
       setIsRecording(true);
       fireHaptic(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium));
     } catch (error: any) {
@@ -183,16 +185,14 @@ export default function ChatScreen({ route }: any) {
   };
 
   const stopRecording = async () => {
-    const recording = recordingRef.current;
-    if (!recording) return;
-    recordingRef.current = null;
+    if (!isRecording) return;
     setIsRecording(false);
     fireHaptic(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success));
 
     try {
-      await recording.stopAndUnloadAsync();
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
-      const uri = recording.getURI();
+      await audioRecorder.stop();
+      await setAudioModeAsync({ allowsRecording: false });
+      const uri = audioRecorder.uri;
       if (!uri) {
         Alert.alert('Audio non disponibile', 'Non sono riuscito a leggere la registrazione.');
         return;
@@ -227,7 +227,7 @@ export default function ChatScreen({ route }: any) {
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: false,
         quality: 0.65,
         base64: true,

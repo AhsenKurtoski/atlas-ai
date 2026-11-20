@@ -7,7 +7,7 @@ dove vivono i dati e quali sono i punti di estensione.
 
 ```
 ┌───────────────────────────┐        HTTP/JSON + Bearer         ┌──────────────────────────────┐
-│ App React Native (Expo 51)│ ────────────────────────────────▶ │ FastAPI (Python 3.11-3.13)   │
+│ App React Native (Expo 57)│ ────────────────────────────────▶ │ FastAPI (Python 3.11-3.13)   │
 │ iOS · Android · Web       │ ◀──────────────────────────────── │ uvicorn, 50 endpoint REST    │
 │ NativeWind · AsyncStorage │      chat, PIN, push, PDF         │ slowapi, Pydantic v2         │
 └───────────────────────────┘                                   └──────────────┬───────────────┘

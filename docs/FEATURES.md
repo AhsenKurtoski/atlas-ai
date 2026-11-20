@@ -68,7 +68,8 @@ risponde con un messaggio esplicito e non simula un successo.
 - **Nessuna app iOS installabile senza firma Apple**: la CI produce un `.app`
   per il Simulatore. Per un iPhone serve firma gratuita (7 giorni) o Apple
   Developer/TestFlight.
-- **Expo Go degli store** non supporta SDK 51: serve una development build.
+- **Expo Go degli store** deve essere allineato a Expo SDK 57: in caso contrario serve
+  una development build.
 - **CAPTCHA, 2FA e paywall** non vengono aggirati dall'agente browser.
 - **Nessun hosting gratuito garantisce uptime 24/7**: vedi
   [DEPLOY_FREE.md](DEPLOY_FREE.md) per l'opzione Oracle + Tailscale e i suoi limiti.

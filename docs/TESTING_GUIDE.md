@@ -161,8 +161,8 @@ sulla stessa rete Wi-Fi.
 
 ### Nota importante su Expo Go
 
-Il progetto usa **Expo SDK 51**. L'Expo Go degli store supporta solo l'SDK più recente:
-se non si apre, crea una development build:
+Il progetto usa **Expo SDK 57**. Se l'Expo Go installato non è allineato a questo
+SDK, crea una development build:
 
 ```powershell
 npm install -g eas-cli
@@ -385,7 +385,7 @@ ritentato e va corretto.
 | `Timeout navigazione` | sito lento | aumenta `BROWSER_NAV_TIMEOUT_MS` |
 | Chat senza risposta AI | manca la chiave | imposta `GOOGLE_API_KEY_1` e riavvia |
 | `Sessione scaduta` (401) | token scaduto/revocato | torna ai profili e reinserisci il PIN |
-| Expo Go “incompatible” | SDK 51 vs store | development build o upgrade SDK |
+| Expo Go “incompatible” | Expo Go non allineato a SDK 57 | development build o aggiorna Expo Go |
 | Porta 8000 occupata | altro servizio | usa `--port 8010` e aggiorna `EXPO_PUBLIC_API_URL` |
 | Push non arriva | manca projectId/FCM/APNs | `eas init` + credenziali EAS + device fisico |
 | Nessun dispositivo registrato | token push assente | attiva le notifiche nell'app e riprova |
