@@ -31,6 +31,15 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e
 
 - `SafeAreaView` core non applica `className` su RN 0.86/web: lo sfondo scuro ora
   arriva dal tema di navigazione e dal CSS di base.
+- **Build Android ripristinata**: `gradle.properties` generato da SDK 57 non termina
+  con newline, quindi l'aggiunta di `org.gradle.jvmargs` con `echo >>` si
+  concatenava all'ultima proprietà. L'autolinking di Expo riceveva
+  `--watched-directories-serialized []org.gradle.jvmargs=...` e usciva con codice 1,
+  mascherato da Gradle come `command 'node' finished with non-zero exit value 1`.
+  Ora la riga viene aggiunta con un newline esplicito.
+- **Markdown in chat** verificato nel browser con `markdown-it` 14: titoli, grassetto,
+  corsivo, link, liste e citazioni vengono renderizzati (nessun marcatore grezzo).
+  La verifica ha usato una cronologia intercettata, senza dipendere dal modello AI.
 
 ## [Non rilasciato]
 
