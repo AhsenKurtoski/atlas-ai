@@ -8,8 +8,10 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e
 ### Cambiato — piattaforma
 
 - **Expo SDK 51 → 57** (React Native 0.74 → 0.86, React 18 → 19.2, TypeScript 6):
-  51 vulnerabilità di `npm audit` ridotte a **3** (restano solo quelle transitive di
-  `react-native-markdown-display`, senza fix disponibile upstream).
+  **51 vulnerabilità di `npm audit` → 0**.
+- `markdown-it` aggiornato a 14 e `linkify-it` a 5 via `overrides` npm: chiude le
+  ultime segnalazioni e risolve il bundle Android, che falliva perché
+  `markdown-it` 10 importava il modulo Node `punycode`.
 - **React Navigation 6 → 7** (`native`, `bottom-tabs`, `native-stack`).
 - **NativeWind 2 → 4**: nuova pipeline Metro/Babel con `global.css`, preset Tailwind
   e CSS reale sul web; verificato nel browser (fondo `#0a0a0f`, testi bianchi).
