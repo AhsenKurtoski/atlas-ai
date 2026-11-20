@@ -54,9 +54,11 @@ jobs:
           ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/atlas-gradle.log
           STATUS=$?
           if [ "$STATUS" -ne 0 ]; then
-            SUMMARY=$(grep -E "^e: |error:|FAILURE:|What went wrong|Caused by:|Execution failed|Could not|> Task" /tmp/atlas-gradle.log | tail -12 | tr '\n' ' ' | cut -c1-1800)
+            # Il messaggio utile sta nelle righe immediatamente successive a
+            # "What went wrong" e prima di "Try".
+            SUMMARY=$(awk '/What went wrong/{flag=1} flag{print} /^\* Try:/{flag=0}' /tmp/atlas-gradle.log | head -25 | tr '\n' ' ' | cut -c1-1800)
             if [ -z "$SUMMARY" ]; then
-              SUMMARY=$(tail -25 /tmp/atlas-gradle.log | tr '\n' ' ' | cut -c1-1800)
+              SUMMARY=$(tail -30 /tmp/atlas-gradle.log | tr '\n' ' ' | cut -c1-1800)
             fi
             echo "::error::Gradle fallito (exit $STATUS): $SUMMARY"
             exit "$STATUS"
