@@ -139,6 +139,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Leggi la versione da frontend/package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./frontend/package.json').version")
+          test -n "$VERSION"
+          echo "Versione app: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Scarica APK testato
         uses: actions/download-artifact@v4
         with:
@@ -148,9 +158,13 @@ jobs:
       - name: Pubblica release scaricabile
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: android-v3.3.0
-          name: ATLAS AI Android v3.3.0 (Tailscale Funnel)
+          # Tag e titolo seguono la versione dell'app: senza bump il rilascio
+          # viene aggiornato (overwrite) invece di duplicato.
+          tag_name: android-v${{ steps.version.outputs.version }}
+          name: ATLAS AI Android v${{ steps.version.outputs.version }} (Tailscale Funnel)
           files: frontend/ATLAS-AI-android.apk
           overwrite: true
-          prerelease: true
+          # Esplicito: aggiornando una release già esistente il flag va azzerato,
+          # altrimenti resterebbe marcata come prerelease.
+          prerelease: false
           generate_release_notes: true

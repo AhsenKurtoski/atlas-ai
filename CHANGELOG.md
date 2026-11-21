@@ -27,6 +27,12 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e
 - CI: Node 22, iOS su `macos-latest` con la Xcode più recente e runtime del simulatore
   scelto in base all'SDK della Xcode installata.
 
+### Cambiato
+
+- Release Android: tag e titolo (`android-v<versione>`) derivano da
+  `frontend/package.json`; niente più `prerelease`, quindi il rilascio viene
+  aggiornato in place finché la versione non cambia.
+
 ### Rimosso
 
 - `expo-blur`: dichiarato ma mai importato.
