@@ -161,14 +161,14 @@ jobs:
           path: frontend
 
       - name: Pubblica release scaricabile
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           # Tag e titolo seguono la versione dell'app: senza bump il rilascio
           # viene aggiornato (overwrite) invece di duplicato.
           tag_name: android-v${{ steps.version.outputs.version }}
           name: ATLAS AI Android v${{ steps.version.outputs.version }} (Tailscale Funnel)
           files: frontend/ATLAS-AI-android.apk
-          overwrite: true
+          overwrite_files: true
           # Esplicito: aggiornando una release già esistente il flag va azzerato,
           # altrimenti resterebbe marcata come prerelease.
           prerelease: false
