@@ -11,6 +11,11 @@ on:
 permissions:
   contents: write
 
+# Due push ravvicinati non devono pubblicare lo stesso tag in parallelo.
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-apk:
     name: Build installable APK
