@@ -29,6 +29,9 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e
 
 ### Cambiato
 
+- Workflow su action aggiornate (Node 24): `checkout@v7`, `setup-node@v7`,
+  `upload-artifact@v7`, `download-artifact@v8`, `setup-python@v7`,
+  `setup-java@v6`, così spariscono i warning di deprecazione di Node 20.
 - Release Android: tag e titolo (`android-v<versione>`) derivano da
   `frontend/package.json`; niente più `prerelease`, quindi il rilascio viene
   aggiornato in place finché la versione non cambia.
