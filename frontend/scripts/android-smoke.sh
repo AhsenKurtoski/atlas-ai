@@ -93,11 +93,18 @@ if [ -z "$PID" ]; then
   exit 1
 fi
 
-for _ in 1 2 3; do
+# Sui runner condivisi il primo caricamento del bundle JS può superare i 30s:
+# attende fino a ~100s, ma si ferma subito se il processo muore (crash reale).
+for _ in $(seq 1 20); do
   if grep -Eq 'ATLAS AI|Chi sei|Inserisci PIN|PIN' atlas-window.xml 2>/dev/null; then
     break
   fi
-  sleep 3
+  PID="$(adb shell pidof "$PACKAGE" | tr -d '\r' || true)"
+  if [ -z "$PID" ]; then
+    echo "Processo ATLAS terminato durante l'attesa della UI"
+    break
+  fi
+  sleep 5
   dump_ui
 done
 if ! grep -Eq 'ATLAS AI|Chi sei|Inserisci PIN|PIN' atlas-window.xml 2>/dev/null; then
