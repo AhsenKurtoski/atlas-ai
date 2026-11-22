@@ -22,7 +22,7 @@ import requests
 
 from app.core.database import get_setting, set_setting
 from app.core.logging_config import get_logger
-from app.core.secrets_box import seal, unseal
+from app.core.secrets_box import is_sealed, seal, unseal
 from app.core.security import create_access_token, decode_access_token
 from app.core.settings import (
     app_deeplink,
@@ -43,6 +43,7 @@ SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.readonly",
 ]
@@ -68,8 +69,16 @@ def default_redirect_uri(base_url: str = "") -> str:
 
 
 def _stored_tokens() -> dict[str, Any]:
-    """Token decifrati (i valori legacy in chiaro restano leggibili)."""
-    return unseal(get_setting(_TOKENS_KEY, {}) or {})
+    """Token decifrati; i valori legacy in chiaro vengono risigillati subito."""
+    raw = get_setting(_TOKENS_KEY, {}) or {}
+    tokens = unseal(raw)
+    if tokens and not is_sealed(raw) and (tokens.get("access_token") or tokens.get("refresh_token")):
+        try:
+            _save_tokens(tokens)
+            log.info("Token Google in chiaro migrati al formato cifrato")
+        except Exception as exc:  # pragma: no cover - difensivo
+            log.warning("Migrazione token Google cifrati fallita: %s", exc)
+    return tokens
 
 
 def _save_tokens(tokens: dict[str, Any]) -> None:
@@ -223,60 +232,61 @@ def access_token(force_refresh: bool = False) -> Optional[str]:
 # ------------------------------------------------------------------
 #  Helper REST
 # ------------------------------------------------------------------
-def api_get(url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    """GET autenticata su Google API. Solleva `GoogleAuthError` se non connesso."""
+def _authorized(
+    method: str,
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Richiesta autenticata, con un retry dopo refresh del token su 401."""
     token = access_token()
     if not token:
         raise GoogleAuthError("Account Google non collegato.")
-    try:
-        response = requests.get(
+
+    def _send(current: str) -> "requests.Response":
+        return requests.request(
+            method,
             url,
             params=params,
-            headers={"Authorization": f"Bearer {token}"},
+            json=body,
+            headers={"Authorization": f"Bearer {current}"},
             timeout=20,
         )
+
+    try:
+        response = _send(token)
         if response.status_code == 401:
-            token = access_token(force_refresh=True)
-            if not token:
+            refreshed = access_token(force_refresh=True)
+            if not refreshed:
                 raise GoogleAuthError("Sessione Google scaduta: ricollega l'account.")
-            response = requests.get(
-                url,
-                params=params,
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=20,
-            )
+            response = _send(refreshed)
         response.raise_for_status()
+        if method == "DELETE" or not response.content:
+            return {}
         return response.json()
     except requests.RequestException as exc:
         raise GoogleAuthError(f"Errore Google API: {exc}") from exc
+
+
+def api_get(url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """GET autenticata su Google API. Solleva `GoogleAuthError` se non connesso."""
+    return _authorized("GET", url, params=params)
 
 
 def api_post(url: str, body: dict[str, Any]) -> dict[str, Any]:
     """POST autenticata su Google API."""
-    token = access_token()
-    if not token:
-        raise GoogleAuthError("Account Google non collegato.")
-    try:
-        response = requests.post(
-            url,
-            json=body,
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            timeout=20,
-        )
-        if response.status_code == 401:
-            token = access_token(force_refresh=True)
-            if not token:
-                raise GoogleAuthError("Sessione Google scaduta: ricollega l'account.")
-            response = requests.post(
-                url,
-                json=body,
-                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                timeout=20,
-            )
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as exc:
-        raise GoogleAuthError(f"Errore Google API: {exc}") from exc
+    return _authorized("POST", url, body=body)
+
+
+def api_patch(url: str, body: dict[str, Any]) -> dict[str, Any]:
+    """PATCH autenticata (modifica parziale di un evento)."""
+    return _authorized("PATCH", url, body=body)
+
+
+def api_delete(url: str) -> dict[str, Any]:
+    """DELETE autenticata (eliminazione di un evento)."""
+    return _authorized("DELETE", url)
 
 
 class GoogleAuthError(RuntimeError):

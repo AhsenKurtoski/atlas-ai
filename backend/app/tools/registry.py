@@ -37,6 +37,13 @@ from app.tools.communication import (
     gmail_cerca_appuntamenti,
     gmail_leggi_email,
 )
+from app.tools.google_advanced import (
+    calendar_elimina_evento,
+    calendar_modifica_evento,
+    gmail_allegati,
+    gmail_cerca_email,
+    gmail_prepara_email,
+)
 from app.tools.utility import (
     calcolatrice,
     cerca_wikipedia,
@@ -86,8 +93,13 @@ ATLAS_TOOLS = [
     # Comunicazione (Gmail/Calendar reali via OAuth)
     gmail_leggi_email,
     gmail_cerca_appuntamenti,
+    gmail_cerca_email,
+    gmail_allegati,
+    gmail_prepara_email,
     calendar_crea_evento,
     calendar_agenda,
+    calendar_modifica_evento,
+    calendar_elimina_evento,
     # Utility
     web_search,
     cerca_wikipedia,

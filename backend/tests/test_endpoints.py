@@ -6,6 +6,8 @@ notifiche, impostazioni, italiano e integrazione Google (stato).
 """
 from __future__ import annotations
 
+from main import APP_VERSION
+
 import base64
 
 
@@ -15,7 +17,7 @@ class TestHealth:
         assert response.status_code == 200
         body = response.json()
         assert body.get("status") == "ok"
-        assert body.get("versione") == "3.2.0"
+        assert body.get("versione") == APP_VERSION
         assert body.get("profili", 0) >= 5
         assert body.get("db_mode") in ("locale", "supabase")
         assert isinstance(body.get("llm"), bool)
@@ -25,7 +27,7 @@ class TestHealth:
         assert response.status_code == 200
         body = response.json()
         assert body.get("status") == "ok"
-        assert body.get("versione") == "3.2.0"
+        assert body.get("versione") == APP_VERSION
         assert body.get("uptime_seconds", 0) >= 0
         assert "uptime_iso" in body
 

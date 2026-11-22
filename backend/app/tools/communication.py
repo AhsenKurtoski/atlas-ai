@@ -144,6 +144,7 @@ def calendar_crea_evento(
     ora: str = "09:00",
     descrizione: str = "",
     durata_minuti: int = 60,
+    fuso_orario: str = "",
 ) -> str:
     """Crea un evento sul Google Calendar collegato.
 
@@ -153,9 +154,16 @@ def calendar_crea_evento(
         ora: Ora di inizio in formato HH:MM (default 09:00).
         descrizione: Note opzionali.
         durata_minuti: Durata in minuti (default 60).
+        fuso_orario: Fuso IANA, es. Europe/Rome (vuoto = quello dello scheduler).
     """
     if not google_status()["connesso"]:
         return _NOT_CONNECTED
+
+    nome_fuso = (fuso_orario or "").strip() or str(_tz())
+    try:
+        zone = ZoneInfo(nome_fuso)
+    except (ZoneInfoNotFoundError, ValueError):
+        return f"Fuso orario sconosciuto: {nome_fuso!r}. Usa un nome IANA, es. Europe/Rome."
 
     try:
         start_date = datetime.strptime(f"{data.strip()} {ora.strip()[:5]}", "%Y-%m-%d %H:%M")
@@ -163,14 +171,14 @@ def calendar_crea_evento(
         return "Data o ora non valide. Usa data YYYY-MM-DD e ora HH:MM (es. 2026-03-20, 15:30)."
 
     durata = max(15, min(int(durata_minuti or 60), 480))
-    start = start_date.replace(tzinfo=_tz())
+    start = start_date.replace(tzinfo=zone)
     end = start + timedelta(minutes=durata)
 
     body = {
         "summary": titolo.strip()[:200] or "Evento ATLAS",
         "description": (descrizione or "").strip()[:2000],
-        "start": {"dateTime": start.isoformat(), "timeZone": str(_tz())},
-        "end": {"dateTime": end.isoformat(), "timeZone": str(_tz())},
+        "start": {"dateTime": start.isoformat(), "timeZone": nome_fuso},
+        "end": {"dateTime": end.isoformat(), "timeZone": nome_fuso},
         "reminders": {"useDefault": True},
     }
     try:
@@ -179,10 +187,15 @@ def calendar_crea_evento(
         return f"⚠️ {exc}"
 
     link = created.get("htmlLink") or ""
+    event_id = created.get("id") or ""
+    from app.tools.google_advanced import overlap_warning
+
     return (
         f"✅ Evento «{body['summary']}» creato per il "
-        f"{start.strftime('%d/%m/%Y alle %H:%M')}."
+        f"{start.strftime('%d/%m/%Y alle %H:%M')}–{end.strftime('%H:%M')} ({nome_fuso})."
+        + (f"\n🆔 id: {event_id}" if event_id else "")
         + (f"\n🔗 {link}" if link else "")
+        + overlap_warning(start, end)
     )
 
 
@@ -220,9 +233,19 @@ def calendar_agenda(data: str = "") -> str:
     if not events:
         return f"📋 Agenda del {day.strftime('%d/%m/%Y')}: nessun evento."
 
-    righe = [f"📋 Agenda del {day.strftime('%d/%m/%Y')}:"]
+    righe = [f"📋 Agenda del {day.strftime('%d/%m/%Y')} ({_tz()}):"]
     for event in events:
-        start_raw = (event.get("start") or {}).get("dateTime") or (event.get("start") or {}).get("date") or ""
-        orario = start_raw[11:16] if "T" in start_raw else "tutto il giorno"
-        righe.append(f"  {orario} — {event.get('summary') or '(senza titolo)'}")
+        start_info = event.get("start") or {}
+        end_info = event.get("end") or {}
+        start_raw = start_info.get("dateTime") or start_info.get("date") or ""
+        end_raw = end_info.get("dateTime") or end_info.get("date") or ""
+        if "T" in start_raw:
+            orario = start_raw[11:16] + (f"–{end_raw[11:16]}" if "T" in end_raw else "")
+        else:
+            orario = "tutto il giorno"
+        event_id = str(event.get("id") or "")
+        righe.append(
+            f"  {orario} — {event.get('summary') or '(senza titolo)'}"
+            + (f" [id: {event_id}]" if event_id else "")
+        )
     return "\n".join(righe)

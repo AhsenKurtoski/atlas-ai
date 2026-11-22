@@ -26,7 +26,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Speech from 'expo-speech';
 import Markdown from 'react-native-markdown-display';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import apiService, { ApiError } from '../services/api';
+import apiService, { ApiError, type EmailDraft } from '../services/api';
 import { syncUpcomingReminders } from '../services/notifications';
 import { useAuth } from '../../App';
 
@@ -97,6 +97,10 @@ export default function ChatScreen({ route }: any) {
   const [searchResults, setSearchResults] = useState<Array<{ ruolo: string; testo: string; quando?: string | null }>>([]);
   const [searching, setSearching] = useState(false);
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
+  const [emailDraft, setEmailDraft] = useState<EmailDraft | null>(null);
+  // Indice realmente in lettura: i callback di Speech.speak arrivano in ritardo,
+  // quindi un messaggio vecchio non deve azzerare lo stato di quello nuovo.
+  const speakingRef = useRef<number | null>(null);
 
   // Nessuna voce deve continuare a parlare dopo aver lasciato la chat.
   useEffect(() => {
@@ -105,21 +109,67 @@ export default function ChatScreen({ route }: any) {
     };
   }, []);
 
+  const stopSpeaking = () => {
+    speakingRef.current = null;
+    setSpeakingIndex(null);
+  };
+
+  // Bozza Gmail: caricata all'apertura e dopo ogni risposta, perché il modello
+  // può prepararne una ma non può inviarla.
+  useEffect(() => {
+    let active = true;
+    apiService
+      .getEmailDraft()
+      .then((result) => {
+        if (active) setEmailDraft(result.data ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [profileId, isLoading]);
+
+  const confirmEmailDraft = async () => {
+    try {
+      const result = await apiService.sendEmailDraft();
+      setEmailDraft(null);
+      Alert.alert(result.status === 'ok' ? 'Email inviata' : 'Invio non riuscito', result.message || '');
+    } catch (error: any) {
+      Alert.alert('Invio non riuscito', error?.message || 'Riprova.');
+    }
+  };
+
+  const discardEmailDraft = async () => {
+    try {
+      await apiService.discardEmailDraft();
+    } catch {
+      // se il backend non risponde la bozza resta: meglio non perdere nulla
+    }
+    setEmailDraft(null);
+  };
+
   const toggleSpeech = async (index: number, text: string) => {
     const clean = testoPerVoce(text);
     if (!clean) return;
-    if (speakingIndex === index) {
+    if (speakingRef.current === index) {
       await Speech.stop();
-      setSpeakingIndex(null);
+      stopSpeaking();
       return;
     }
     await Speech.stop();
+    speakingRef.current = index;
     setSpeakingIndex(index);
     Speech.speak(clean, {
       language: 'it-IT',
-      onDone: () => setSpeakingIndex(null),
-      onStopped: () => setSpeakingIndex(null),
-      onError: () => setSpeakingIndex(null),
+      onDone: () => {
+        if (speakingRef.current === index) stopSpeaking();
+      },
+      onStopped: () => {
+        if (speakingRef.current === index) stopSpeaking();
+      },
+      onError: () => {
+        if (speakingRef.current === index) stopSpeaking();
+      },
     });
   };
 
@@ -507,6 +557,38 @@ export default function ChatScreen({ route }: any) {
         </ScrollView>
 
         <View className="px-4 py-3 bg-[#0a0a0f] border-t border-[#ffffff10] pb-8">
+          {emailDraft ? (
+            <View className="mb-3 bg-[#0e2a33] border border-[#22d3ee40] rounded-2xl p-3">
+              <Text className="text-[#22d3ee] font-bold text-xs uppercase">
+                Bozza email — non ancora inviata
+              </Text>
+              <Text className="text-white font-bold mt-1" numberOfLines={1}>
+                {emailDraft.oggetto}
+              </Text>
+              <Text className="text-[#8888a0] text-xs" numberOfLines={1}>
+                A: {emailDraft.destinatario}
+                {emailDraft.allegato ? ` · 📎 ${emailDraft.allegato}` : ''}
+              </Text>
+              <View className="flex-row mt-2">
+                <TouchableOpacity
+                  onPress={confirmEmailDraft}
+                  accessibilityRole="button"
+                  accessibilityLabel="Invia la bozza di email"
+                  className="bg-[#22d3ee] px-4 py-2 rounded-xl mr-2"
+                >
+                  <Text className="text-[#0a0a0f] font-bold text-sm">Invia</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={discardEmailDraft}
+                  accessibilityRole="button"
+                  accessibilityLabel="Scarta la bozza di email"
+                  className="bg-[#ffffff10] px-4 py-2 rounded-xl"
+                >
+                  <Text className="text-white font-bold text-sm">Scarta</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
           {pendingImage ? (
             <View className="flex-row items-center mb-3 bg-[#ffffff08] p-3 rounded-2xl border border-[#ffffff10]">
               <Image

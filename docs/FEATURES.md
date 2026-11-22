@@ -41,7 +41,9 @@ risponde con un messaggio esplicito e non simula un successo.
 | Calcolatrice | parser AST safe | — | nessun `eval` |
 | QR code | api.qrserver.com | — | URL immagine reale |
 | Gmail: leggi email | Gmail API OAuth | credenziali Google | “non configurato” senza OAuth |
-| Calendar: agenda e crea evento | Calendar API OAuth | credenziali Google | evento reale |
+| Calendar: agenda, crea, modifica, elimina evento | Calendar API OAuth | credenziali Google | evento reale, avviso sovrapposizioni |
+| Gmail: invio email | Gmail API OAuth (`gmail.send`) | conferma esplicita in app | bozza + pulsante Invia |
+| Gmail: allegati | Gmail API OAuth | credenziali Google | elenco e riuso in risposta |
 | Ricerca nelle email per appuntamenti | Gmail API OAuth | credenziali Google | — |
 | Agente browser (naviga, clicca, compila) | Chromium Playwright | `playwright install chromium` | SSRF protetto |
 | Server MCP | JSON-RPC/HTTP | `MCP_SERVERS` | tool discovery e call reali |

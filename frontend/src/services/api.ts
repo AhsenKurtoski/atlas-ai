@@ -182,6 +182,14 @@ export interface LeaderboardRow {
   streak: number;
 }
 
+export interface EmailDraft {
+  destinatario: string;
+  oggetto: string;
+  corpo: string;
+  allegato?: string | null;
+  creata?: string;
+}
+
 export interface GoogleStatus {
   configurato: boolean;
   connesso: boolean;
@@ -550,6 +558,25 @@ class ApiService {
 
   async disconnectGoogle(): Promise<GenericResult> {
     return this._request('POST', '/integrazioni/google/disconnetti', {});
+  }
+
+  /** Bozza email pronta: non parte finché l'utente non conferma. */
+  async getEmailDraft(): Promise<GenericResult<EmailDraft | null>> {
+    return this._request<GenericResult<EmailDraft | null>>('GET', '/integrazioni/gmail/bozza');
+  }
+
+  /** Conferma esplicita: è l'unico punto da cui parte un'email. */
+  async sendEmailDraft(): Promise<GenericResult> {
+    return this._request<GenericResult>(
+      'POST',
+      '/integrazioni/gmail/bozza/invia',
+      { conferma: true },
+      { timeoutMs: 45000 }
+    );
+  }
+
+  async discardEmailDraft(): Promise<GenericResult> {
+    return this._request<GenericResult>('DELETE', '/integrazioni/gmail/bozza');
   }
 }
 

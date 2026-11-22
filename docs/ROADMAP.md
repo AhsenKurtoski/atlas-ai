@@ -23,11 +23,11 @@ Legenda: ✅ fatto e testato · 🟡 parziale · ⛔ non ancora iniziato
 | Voce | Stato | Note |
 |---|---|---|
 | Lettura Gmail e ricerca appuntamenti | ✅ | `gmail_leggi_email`, `gmail_cerca_appuntamenti` |
-| Invio email con conferma esplicita | ⛔ | Serve lo scope `gmail.send` e un endpoint di conferma a due passi |
-| Allegati delle email | ⛔ | Oggi si leggono oggetto, mittente, data e corpo |
+| Invio email con conferma esplicita | ✅ | Bozza + conferma in app, tool di invio non esposto al modello |
+| Allegati delle email | ✅ | Elenco allegati e riuso in una risposta (max 8 MB) |
 | Creazione eventi / agenda | ✅ | `calendar_crea_evento`, `calendar_agenda` |
-| Modifica e cancellazione eventi | ⛔ | Serve `calendar_event_modifica` / `calendar_event_elimina` |
-| Fusi orari e sovrapposizioni | 🟡 | Gli eventi usano il fuso dello scheduler; nessun controllo di sovrapposizione |
+| Modifica e cancellazione eventi | ✅ | `calendar_modifica_evento`, `calendar_elimina_evento` |
+| Fusi orari e sovrapposizioni | ✅ | Fusi IANA validati, avviso di sovrapposizione su creazione e modifica |
 
 ## Intelligenza artificiale
 

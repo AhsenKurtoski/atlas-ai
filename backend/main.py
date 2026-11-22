@@ -1,5 +1,5 @@
 """
-ATLAS AI v3.2 — Entrypoint principale FastAPI.
+ATLAS AI v3.4 — Entrypoint principale FastAPI.
 
 Sicurezza & architettura:
 - Token di sessione firmati HMAC (stateless → sicuri anche con più worker)
@@ -77,6 +77,7 @@ from app.core.schemas import (
     BudgetLimitsRequest,
     ChatRequest,
     ChatResponse,
+    ConfermaInvioEmail,
     CreateProfileRequest,
     GenericResponse,
     HealthResponse,
@@ -140,7 +141,7 @@ _STARTED_AT = time.time()
 # ---------------- Lifespan ----------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("🚀 Avvio ATLAS AI v3.2 - ambiente=%s", os.getenv("APP_ENV", "development"))
+    log.info("🚀 Avvio ATLAS AI v3.4 - ambiente=%s", os.getenv("APP_ENV", "development"))
     if scheduler_enabled():
         try:
             start_scheduler()
@@ -192,10 +193,12 @@ async def lifespan(app: FastAPI):
             pass
 
 
+APP_VERSION = "3.4.0"
+
 app = FastAPI(
-    title="ATLAS AI v3.2 Backend",
+    title=f"ATLAS AI v{APP_VERSION} Backend",
     description="Assistente AI per la famiglia con LLM, tool reali e notifiche push",
-    version="3.2.0",
+    version=APP_VERSION,
     lifespan=lifespan,
 )
 app.state.limiter = limiter
@@ -266,7 +269,7 @@ def healthcheck(request: Request) -> dict[str, Any]:
     """
     return {
         "status": "ok",
-        "versione": "3.2.0",
+        "versione": APP_VERSION,
         "ambiente": os.getenv("APP_ENV", "development"),
         "scheduler_attivo": get_scheduler() is not None,
         "llm": bool(ai_router.chiavi),
@@ -1360,6 +1363,69 @@ def google_disconnetti(
 
     google_oauth.disconnect()
     return GenericResponse(status="ok", message="Account Google scollegato.")
+
+
+@app.get("/integrazioni/gmail/bozza", response_model=GenericResponse)
+@limiter.limit("60/minute")
+def gmail_bozza(
+    request: Request,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    """Bozza email in attesa di conferma (mai inviata automaticamente)."""
+    from app.tools.google_advanced import get_pending_draft
+
+    draft = get_pending_draft()
+    if not draft:
+        return GenericResponse(status="ok", data=None)
+    return GenericResponse(
+        status="ok",
+        data={
+            "destinatario": draft.get("a", ""),
+            "oggetto": draft.get("oggetto", ""),
+            "corpo": draft.get("corpo", ""),
+            "allegato": (draft.get("allegato") or {}).get("filename") if draft.get("allegato") else None,
+            "creata": draft.get("creata", ""),
+            "profilo": draft.get("profilo", ""),
+        },
+    )
+
+
+@app.post("/integrazioni/gmail/bozza/invia", response_model=GenericResponse)
+@limiter.limit("10/minute")
+def gmail_invia_bozza(
+    request: Request,
+    payload: ConfermaInvioEmail,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    """Invia la bozza solo con `conferma: true` esplicito dall'app."""
+    from app.tools.google_advanced import get_pending_draft, send_pending_draft
+
+    if not get_pending_draft():
+        return GenericResponse(status="error", message="Nessuna bozza in attesa di invio.")
+    if payload.conferma is not True:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Serve una conferma esplicita: imposta conferma=true solo dopo aver letto la bozza.",
+        )
+    ok, message = send_pending_draft()
+    log.info("Invio bozza Gmail richiesto da %s: %s", slug, "ok" if ok else "fallito")
+    return GenericResponse(status="ok" if ok else "error", message=message)
+
+
+@app.delete("/integrazioni/gmail/bozza", response_model=GenericResponse)
+@limiter.limit("30/minute")
+def gmail_scarta_bozza(
+    request: Request,
+    slug: str = Depends(get_current_profile),
+) -> GenericResponse:
+    """Scarta la bozza senza inviare nulla."""
+    from app.tools.google_advanced import cancel_pending_draft
+
+    scartata = cancel_pending_draft()
+    return GenericResponse(
+        status="ok" if scartata else "error",
+        message="Bozza scartata." if scartata else "Nessuna bozza da scartare.",
+    )
 
 
 # ---------------- Gestione errori ----------------

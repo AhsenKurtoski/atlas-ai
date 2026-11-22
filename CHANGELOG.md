@@ -3,6 +3,35 @@
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e
 [Semantic Versioning](https://semver.org/lang/it/).
 
+## [3.4.0] — 2026-11-22
+
+### Aggiunto — Google completo
+
+- **Invio email con conferma**: `gmail_prepara_email` crea solo una bozza;
+  l'invio passa da `POST /integrazioni/gmail/bozza/invia` con `conferma: true`
+  e il tool che invia **non è esposto al modello**. Bozza visibile nell'app con
+  «Invia» / «Scarta» (`GET` e `DELETE /integrazioni/gmail/bozza`).
+- **Allegati**: `gmail_allegati` elenca i file di un'email e la bozza può
+  riusarne uno (massimo 8 MB) costruendo un MIME corretto.
+- **Ricerca email**: `gmail_cerca_email` filtra per mittente, oggetto, testo e
+  intervallo di date (query Gmail `from:` / `subject:` / `after:` / `before:`).
+- **Calendar modificabile**: `calendar_modifica_evento` (PATCH) e
+  `calendar_elimina_evento` (DELETE), con fusi IANA validati, durata preservata
+  e **avviso di sovrapposizione** su creazione e modifica.
+- L'agenda mostra intervallo orario e id dell'evento, utile per modifiche.
+
+### Sicurezza
+
+- Scope aggiunto `gmail.send`; gli eventi non hanno partecipanti impliciti:
+  nessun invito parte dal modello.
+- I token OAuth in chiaro vengono risigillati alla prima lettura, non solo al
+  rinnovo.
+
+### Corretto
+
+- Lettura ad alta voce: un callback in ritardo di un messaggio precedente non
+  azzera più lo stato del messaggio in corso.
+
 ## [3.3.0] — 2026-11-20
 
 ### Cambiato — piattaforma

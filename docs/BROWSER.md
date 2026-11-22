@@ -150,7 +150,7 @@ pytest -q                      # suite completa: oltre 200 test
 
 Copertura di `tests/test_browser.py`:
 
-- registry con 50 tool e 10 tool browser;
+- registry con 55 tool e 10 tool browser;
 - apertura pagina e lettura di titolo/testo/link/campi;
 - compilazione per label e click su bottone con aggiornamento JavaScript;
 - select, scroll e contenuti caricati dinamicamente;

@@ -128,3 +128,22 @@ curl -s -OJ http://127.0.0.1:8010/privacy/dati -H "Authorization: Bearer $TOKEN"
 
 I limiti sono per processo (`memory://`): con più worker configura Redis in
 `limiter = Limiter(..., storage_uri=...)`.
+
+
+## Gmail: bozza e invio con conferma
+
+L'invio non è un tool dell'AI: il modello prepara solo una bozza, l'utente la
+conferma dall'app.
+
+```bash
+# Bozza in attesa (null se non c'è)
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8010/integrazioni/gmail/bozza
+
+# Invio: serve conferma=true esplicito
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json"   -d '{"conferma": true}' http://localhost:8010/integrazioni/gmail/bozza/invia
+
+# Scarta la bozza senza inviare
+curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8010/integrazioni/gmail/bozza
+```
+
+Senza `conferma: true` l'endpoint risponde **400** e la bozza resta in attesa.

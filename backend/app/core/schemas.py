@@ -232,13 +232,19 @@ class GenericResponse(BaseModel):
     model_config = ConfigDict(json_schema_extra={"example": {"status": "ok", "message": "fatto"}})
 
 
+class ConfermaInvioEmail(BaseModel):
+    """Conferma esplicita dell'utente prima di inviare una bozza Gmail."""
+
+    conferma: bool = False
+
+
 class HealthResponse(BaseModel):
     status: Literal["ok", "degraded", "error"]
     profili: int
     automazioni: int
     scheduler_attivo: bool = False
     ambiente: str
-    versione: str = "3.2.0"
+    versione: str = "3.4.0"
     db_mode: str = "locale"
     notifiche: str = "expo"
     llm: bool = False

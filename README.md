@@ -1,4 +1,4 @@
-# 🧠 ATLAS AI v3.3
+# 🧠 ATLAS AI v3.4
 
 Assistente AI **family-first** con backend Python/FastAPI + app mobile React Native (Expo).
 
@@ -28,7 +28,7 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 
 | Dispositivo | Come |
 |---|---|
-| **Android (telefono/tablet)** | Scarica l'[APK release](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.3.0/ATLAS-AI-android.apk) (~90 MB), apri il file e consenti l'installazione da browser. |
+| **Android (telefono/tablet)** | Scarica l'[APK release](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.4.0/ATLAS-AI-android.apk) (~90 MB), apri il file e consenti l'installazione da browser. |
 | **iPhone / iPad** | Simulatore con Mac, firma gratuita (7 giorni) o TestFlight. Apple richiede una firma: **non esiste un'installazione iOS gratuita in 5 minuti**. |
 | **Tablet** | Stessa app: layout responsive a due colonne, rotazione portrait/landscape, nessuna build separata. |
 | **Sviluppo** | Backend + `npx expo start`; guida rapida in [`docs/QUICKSTART.md`](docs/QUICKSTART.md). |
@@ -101,8 +101,8 @@ te lo dice esplicitamente invece di fingere che sia tutto attivo.
 ┌──────────────────────────────┐      HTTP / JSON       ┌─────────────────────────────────────────┐
 │   APP MOBILE                 │ ─────────────────────▶ │  BACKEND FASTAPI (Python 3.11-3.13)     │
 │   React Native · Expo 57     │  Bearer token firmato  │                                         │
-│   NativeWind / Tailwind      │ ◀───────────────────── │  - 50 endpoint REST                     │
-│   AsyncStorage (persistenza) │   Chat + Pin + Push    │  - 50 tool reali per Gemini             │
+│   NativeWind / Tailwind      │ ◀───────────────────── │  - 53 endpoint REST                     │
+│   AsyncStorage (persistenza) │   Chat + Pin + Push    │  - 55 tool reali per Gemini             │
 │   React Navigation 7         │                        │  - 10 tool browser (Chromium headless)  │
 │   expo-notifications         │                        │  - Auth PIN bcrypt + token HMAC 8h      │
 └──────────────────────────────┘                        │  - 12 automazioni APScheduler           │
@@ -236,6 +236,7 @@ Expo Go, poi `10.0.2.2` su emulatore Android, poi `localhost`.
 | **Blocco automatico** dell'app dopo 5 minuti di inattività o al ritorno dal background (PIN richiesto) | ✅ |
 | **Backup cifrati** (AES/Fernet) di `_local_db` all'avvio e ogni 6 ore, ultimi 14 archivi in `backend/_backups` | ✅ |
 | **Token OAuth Google cifrati a riposo** (AES/Fernet, migrazione automatica dei token in chiaro) | ✅ |
+| **Nessuna email o invito parte senza conferma**: l'AI prepara la bozza, l'invio è un endpoint separato con `conferma: true` e il tool di invio non è esposto al modello | ✅ |
 | **Privacy**: informativa in-app, esportazione JSON dei propri dati, cancellazione del proprio profilo (il profilo `io` non può auto-eliminarsi) | ✅ |
 | **CORS chiuso di default** in produzione: solo le origini elencate in `CORS_ALLOWED_ORIGINS` | ✅ |
 | **Protezione SSRF** su fetch web e browser (DNS su navigazioni, XHR, iframe e immagini) | ✅ |
@@ -290,7 +291,10 @@ dell'app come testo); le email vengono lette solo se colleghi Gmail.
 | 12 automazioni (meteo, crypto, budget, email, italiano, calendario, promemoria) | ✅ reale | credenziali dei servizi usati |
 | Lezioni + quiz italiano con punti/streak | ✅ reale | — |
 | Gmail: lettura inbox e appuntamenti | ✅ reale | OAuth Google |
-| Calendar: crea evento / agenda del giorno | ✅ reale | OAuth Google |
+| Gmail: ricerca per mittente/data/oggetto e allegati | ✅ reale | scope `gmail.readonly` |
+| Gmail: invio email **solo dopo conferma in app** | ✅ reale | scope `gmail.send` |
+| Calendar: crea, modifica, elimina eventi + agenda | ✅ reale | OAuth Google |
+| Calendar: fusi IANA e avviso di sovrapposizione | ✅ reale | OAuth Google |
 | Server MCP (tool discovery + call) | ✅ reale | `MCP_SERVERS` |
 | Ricerca web, notizie, meteo, crypto, cambio, azioni, traduzioni, QR | ✅ reale | — |
 | Voli | ✅ reale con Amadeus, altrimenti link reali | `AMADEUS_*` |
@@ -357,7 +361,7 @@ atlas-ai/
 │   │   │   ├── privacy.py      # export dati + cancellazione profilo
 │   │   │   ├── backup.py       # backup cifrati + ripristino
 │   │   │   └── browser.py      # agente Chromium: worker, sessioni, SSRF
-│   │   └── tools/              # 50 tool (browser, family, finance, travel, utility, MCP, italiano)
+│   │   └── tools/              # 55 tool (browser, family, finance, travel, utility, MCP, italiano, Google)
 │   ├── tests/                  # oltre 200 test
 │   └── supabase_schema.sql
 ├── scripts/                    # setup, verifica e autostart (Windows)
@@ -381,7 +385,7 @@ atlas-ai/
 - **CI**: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) esegue `pytest` e `tsc --noEmit`; [`e2e.yml`](.github/workflows/e2e.yml) esegue gli smoke test Playwright; [`ios-build.yml`](.github/workflows/ios-build.yml) compila l'app iOS per simulatore.
 - **Nessun segreto nel repo**: `.env` e `_local_db/` sono ignorati; usa `.env.example` come modello.
 - **Architettura e flussi**: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-- **Riferimento API** (50 endpoint, esempi curl): [`docs/API.md`](docs/API.md).
+- **Riferimento API** (53 endpoint, esempi curl): [`docs/API.md`](docs/API.md).
 - **Privacy e tempi di conservazione**: [`docs/PRIVACY.md`](docs/PRIVACY.md).
 - **Changelog**: [`CHANGELOG.md`](CHANGELOG.md).
 - **Agente browser**: architettura, tool e limiti in [`docs/BROWSER.md`](docs/BROWSER.md).
