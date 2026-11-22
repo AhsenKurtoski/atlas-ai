@@ -121,10 +121,14 @@ fi
 
 if ! ui_visible; then
   SIZE=$(wc -c < atlas-window.xml 2>/dev/null || echo 0)
-  LOGTAIL=$(tail -60 android-logcat.txt 2>/dev/null | tr '\n' ' ' | cut -c1-1500)
+  # Cosa c'è davvero sullo schermo e chi ha il focus: senza questo, il fallimento
+  # è indistinguibile da un emulatore lento (il log completo richiede un token).
+  TEXTS=$(grep -o 'text="[^"]*"' atlas-window.xml 2>/dev/null | head -25 | tr '\n' ' ' | cut -c1-700)
+  FOCUS=$(adb shell dumpsys window 2>/dev/null | grep -m1 mCurrentFocus || true)
+  APPLOG=$(grep -iE 'atlas|AndroidRuntime|FATAL|ReactNative|hermes|libc' android-logcat.txt 2>/dev/null | tail -40 | tr '\n' ' ' | cut -c1-1200)
   tail -120 android-logcat.txt || true
   adb exec-out screencap -p > atlas-install.png || true
-  echo "::error::La UI ATLAS non è comparsa dopo il lancio (window.xml ${SIZE} byte, processo '${PID:-assente}'). LOGCAT: ${LOGTAIL:-nessun log}"
+  echo "::error::La UI ATLAS non è comparsa dopo il lancio (window.xml ${SIZE} byte, processo '${PID:-assente}'). FOCUS: ${FOCUS}, TESTI: ${TEXTS:-nessuno}. APPLOG: ${APPLOG:-nessuna riga utile}"
   exit 1
 fi
 
