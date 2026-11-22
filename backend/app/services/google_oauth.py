@@ -36,6 +36,7 @@ log = get_logger(__name__)
 AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo"
+REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke"
 GMAIL_API = "https://gmail.googleapis.com/gmail/v1"
 CALENDAR_API = "https://www.googleapis.com/calendar/v3"
 
@@ -179,6 +180,22 @@ def _fetch_email(access_token: str) -> str:
 
 
 def disconnect() -> None:
+    """Revoca i permessi su Google e cancella i token locali.
+
+    La sola cancellazione locale lascerebbe l'app autorizzata nel tuo account
+    Google: qui chiamiamo l'endpoint di revoca per access e refresh token.
+    Se la chiamata fallisce (offline, token già scaduto) i token vengono
+    comunque rimossi: l'utente può revocare a mano da myaccount.google.com.
+    """
+    tokens = _stored_tokens()
+    for key in ("refresh_token", "access_token"):
+        token = str(tokens.get(key) or "").strip()
+        if not token:
+            continue
+        try:
+            requests.post(REVOKE_ENDPOINT, data={"token": token}, timeout=10)
+        except requests.RequestException as exc:
+            log.warning("Revoca token Google fallita (%s): %s", key, exc)
     set_setting(_TOKENS_KEY, {})
     set_setting(_EMAIL_KEY, "")
 

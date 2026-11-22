@@ -24,6 +24,8 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e
 
 - Scope aggiunto `gmail.send`; gli eventi non hanno partecipanti impliciti:
   nessun invito parte dal modello.
+- **Revoca reale dei permessi Google**: «Disconnetti» chiama l'endpoint di
+  revoca per access e refresh token, non solo cancella i token locali.
 - I token OAuth in chiaro vengono risigillati alla prima lettura, non solo al
   rinnovo.
 

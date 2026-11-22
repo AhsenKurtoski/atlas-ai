@@ -23,6 +23,8 @@ Legenda: ✅ fatto e testato · 🟡 parziale · ⛔ non ancora iniziato
 | Voce | Stato | Note |
 |---|---|---|
 | Lettura Gmail e ricerca appuntamenti | ✅ | `gmail_leggi_email`, `gmail_cerca_appuntamenti` |
+| Ricerca email per mittente/data/oggetto | ✅ | `gmail_cerca_email` |
+| Revoca dei permessi Google | ✅ | revoca su Google + cancellazione token locali |
 | Invio email con conferma esplicita | ✅ | Bozza + conferma in app, tool di invio non esposto al modello |
 | Allegati delle email | ✅ | Elenco allegati e riuso in una risposta (max 8 MB) |
 | Creazione eventi / agenda | ✅ | `calendar_crea_evento`, `calendar_agenda` |

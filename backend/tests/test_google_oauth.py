@@ -66,7 +66,22 @@ class TestGoogleOAuth:
         )
 
     def test_disconnect_pulisce_i_token(self):
-        google_oauth.disconnect()
+        set_setting("google.tokens", {"access_token": "access-1", "refresh_token": "refresh-1"})
+        revocati: list[str] = []
+
+        class _Ok:
+            status_code = 200
+
+        original_post = google_oauth.requests.post
+        google_oauth.requests.post = lambda url, data=None, timeout=None: (
+            revocati.append((data or {}).get("token", "")) or _Ok()
+        )
+        try:
+            google_oauth.disconnect()
+        finally:
+            google_oauth.requests.post = original_post
+
+        assert set(revocati) == {"access-1", "refresh-1"}
         stato = google_oauth.status()
         assert stato["connesso"] is False
         assert stato["email"] == ""
