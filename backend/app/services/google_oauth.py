@@ -22,6 +22,7 @@ import requests
 
 from app.core.database import get_setting, set_setting
 from app.core.logging_config import get_logger
+from app.core.secrets_box import seal, unseal
 from app.core.security import create_access_token, decode_access_token
 from app.core.settings import (
     app_deeplink,
@@ -67,8 +68,13 @@ def default_redirect_uri(base_url: str = "") -> str:
 
 
 def _stored_tokens() -> dict[str, Any]:
-    data = get_setting(_TOKENS_KEY, {}) or {}
-    return data if isinstance(data, dict) else {}
+    """Token decifrati (i valori legacy in chiaro restano leggibili)."""
+    return unseal(get_setting(_TOKENS_KEY, {}) or {})
+
+
+def _save_tokens(tokens: dict[str, Any]) -> None:
+    """Salva i token cifrati a riposo: mai access/refresh token in chiaro."""
+    set_setting(_TOKENS_KEY, seal(tokens))
 
 
 def status() -> dict[str, Any]:
@@ -140,7 +146,7 @@ def exchange_code(code: str, base_url: str = "") -> bool:
         "expires_at": int(time.time()) + int(data.get("expires_in", 3600)) - 30,
         "scope": data.get("scope", ""),
     }
-    set_setting(_TOKENS_KEY, tokens)
+    _save_tokens(tokens)
 
     email = _fetch_email(access_token)
     if email:
@@ -210,7 +216,7 @@ def access_token(force_refresh: bool = False) -> Optional[str]:
             "expires_at": int(time.time()) + int(data.get("expires_in", 3600)) - 30,
         }
     )
-    set_setting(_TOKENS_KEY, tokens)
+    _save_tokens(tokens)
     return str(new_token)
 
 

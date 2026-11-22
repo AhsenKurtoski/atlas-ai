@@ -23,6 +23,7 @@ import {
 } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
+import * as Speech from 'expo-speech';
 import Markdown from 'react-native-markdown-display';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiService, { ApiError } from '../services/api';
@@ -58,6 +59,15 @@ const WELCOME: ChatMsg = {
   text: `Ciao! Sono **ATLAS AI**. Chiedimi meteo, email, calendario, budget o italiano.`,
 };
 
+/** Il markdown non va letto ad alta voce: via i marcatori, restano le parole. */
+function testoPerVoce(text: string): string {
+  return text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[*_`#>]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /** Expo Haptics non esiste sul web: un errore qui non deve bloccare l'invio. */
 function fireHaptic(call: () => Promise<unknown>) {
   if (Platform.OS === 'web') return;
@@ -86,6 +96,32 @@ export default function ChatScreen({ route }: any) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Array<{ ruolo: string; testo: string; quando?: string | null }>>([]);
   const [searching, setSearching] = useState(false);
+  const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
+
+  // Nessuna voce deve continuare a parlare dopo aver lasciato la chat.
+  useEffect(() => {
+    return () => {
+      Speech.stop().catch(() => {});
+    };
+  }, []);
+
+  const toggleSpeech = async (index: number, text: string) => {
+    const clean = testoPerVoce(text);
+    if (!clean) return;
+    if (speakingIndex === index) {
+      await Speech.stop();
+      setSpeakingIndex(null);
+      return;
+    }
+    await Speech.stop();
+    setSpeakingIndex(index);
+    Speech.speak(clean, {
+      language: 'it-IT',
+      onDone: () => setSpeakingIndex(null),
+      onStopped: () => setSpeakingIndex(null),
+      onError: () => setSpeakingIndex(null),
+    });
+  };
 
   // Cronologia locale per profilo.
   useEffect(() => {
@@ -432,6 +468,20 @@ export default function ChatScreen({ route }: any) {
                 />
               ) : null}
               <Markdown style={markdownStyles}>{message.text}</Markdown>
+              {message.role === 'ai' && testoPerVoce(message.text) ? (
+                <TouchableOpacity
+                  onPress={() => toggleSpeech(index, message.text)}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    speakingIndex === index ? 'Ferma la lettura ad alta voce' : 'Ascolta il messaggio'
+                  }
+                  className="flex-row items-center mt-3 self-start bg-[#ffffff10] px-3 py-2 rounded-full"
+                >
+                  <Text className="text-[#22d3ee] text-xs font-bold">
+                    {speakingIndex === index ? '⏹ Ferma' : '🔊 Ascolta'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </Animated.View>
           ))}
 

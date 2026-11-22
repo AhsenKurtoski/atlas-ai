@@ -26,6 +26,7 @@
     "expo-image-picker": "~57.0.21",
     "expo-notifications": "~57.0.25",
     "expo-sharing": "~57.0.26",
+    "expo-speech": "~57.0.3",
     "expo-splash-screen": "~57.0.11",
     "expo-status-bar": "~57.0.1",
     "nativewind": "^4.2.7",

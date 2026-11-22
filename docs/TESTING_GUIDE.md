@@ -73,7 +73,7 @@ cd backend
 Risultato atteso:
 
 ```text
-186 passed
+224 passed
 ```
 
 Test mirati:
@@ -394,7 +394,7 @@ ritentato e va corretto.
 
 ## 15. Checklist finale
 
-- [ ] `pytest -q` → 186 passed
+- [ ] `pytest -q` → 224 passed
 - [ ] `pytest tests/test_browser.py -v` → 18 passed
 - [ ] `pytest tests/test_ai_loop.py -v` → 2 passed
 - [ ] `npx tsc --noEmit` → 0 errori

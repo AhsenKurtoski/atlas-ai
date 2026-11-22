@@ -1,4 +1,4 @@
-# 🧠 ATLAS AI v3.2
+# 🧠 ATLAS AI v3.3
 
 Assistente AI **family-first** con backend Python/FastAPI + app mobile React Native (Expo).
 
@@ -28,7 +28,7 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 
 | Dispositivo | Come |
 |---|---|
-| **Android (telefono/tablet)** | Scarica l'[APK release](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.2.0/ATLAS-AI-android.apk) (~73 MB), apri il file e consenti l'installazione da browser. |
+| **Android (telefono/tablet)** | Scarica l'[APK release](https://github.com/AhsenKurtoski/atlas-ai/releases/download/android-v3.3.0/ATLAS-AI-android.apk) (~90 MB), apri il file e consenti l'installazione da browser. |
 | **iPhone / iPad** | Simulatore con Mac, firma gratuita (7 giorni) o TestFlight. Apple richiede una firma: **non esiste un'installazione iOS gratuita in 5 minuti**. |
 | **Tablet** | Stessa app: layout responsive a due colonne, rotazione portrait/landscape, nessuna build separata. |
 | **Sviluppo** | Backend + `npx expo start`; guida rapida in [`docs/QUICKSTART.md`](docs/QUICKSTART.md). |
@@ -235,6 +235,7 @@ Expo Go, poi `10.0.2.2` su emulatore Android, poi `localhost`.
 | **Esci da tutti i dispositivi**: `POST /auth/logout-tutti` avanza `pin_version` e invalida ogni token del profilo | ✅ |
 | **Blocco automatico** dell'app dopo 5 minuti di inattività o al ritorno dal background (PIN richiesto) | ✅ |
 | **Backup cifrati** (AES/Fernet) di `_local_db` all'avvio e ogni 6 ore, ultimi 14 archivi in `backend/_backups` | ✅ |
+| **Token OAuth Google cifrati a riposo** (AES/Fernet, migrazione automatica dei token in chiaro) | ✅ |
 | **Privacy**: informativa in-app, esportazione JSON dei propri dati, cancellazione del proprio profilo (il profilo `io` non può auto-eliminarsi) | ✅ |
 | **CORS chiuso di default** in produzione: solo le origini elencate in `CORS_ALLOWED_ORIGINS` | ✅ |
 | **Protezione SSRF** su fetch web e browser (DNS su navigazioni, XHR, iframe e immagini) | ✅ |
@@ -389,6 +390,7 @@ atlas-ai/
 - **Percorso rapido e limiti reali**: [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
 - **iOS, iPad, firma e TestFlight**: [`docs/IOS.md`](docs/IOS.md).
 - **Matrice funzionalità e prerequisiti**: [`docs/FEATURES.md`](docs/FEATURES.md).
+- **Roadmap pubblica**: [`docs/ROADMAP.md`](docs/ROADMAP.md) (fatto, parziale, mancante).
 - **Sempre online gratis**: [`docs/DEPLOY_FREE.md`](docs/DEPLOY_FREE.md) (Oracle Always Free + Tailscale Funnel).
 - **Media**: screenshot in [`screenshots/`](screenshots/) e video demo in [`media/atlas-ai-demo.mp4`](media/atlas-ai-demo.mp4).
 

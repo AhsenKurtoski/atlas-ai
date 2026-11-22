@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from app.core.database import get_setting, set_setting
 from app.services import google_oauth
 
 
@@ -69,3 +70,47 @@ class TestGoogleOAuth:
         stato = google_oauth.status()
         assert stato["connesso"] is False
         assert stato["email"] == ""
+
+
+class TestTokenCifrati:
+    """I token OAuth non devono mai finire in chiaro nel database."""
+
+    class _FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "access_token": "ya29-access-di-test",
+                "refresh_token": "1//refresh-di-test",
+                "expires_in": 3600,
+                "scope": "gmail.readonly calendar.events",
+            }
+
+    def test_token_cifrati_a_riposo(self, google_env, monkeypatch):
+        monkeypatch.setattr(google_oauth.requests, "post", lambda *a, **k: self._FakeResponse())
+        monkeypatch.setattr(google_oauth, "_fetch_email", lambda token: "famiglia@example.com")
+
+        assert google_oauth.exchange_code("codice", "http://localhost:8000") is True
+
+        raw = get_setting("google.tokens", {})
+        assert "enc" in raw, "il valore salvato deve essere cifrato"
+        serialized = str(raw)
+        assert "ya29-access-di-test" not in serialized
+        assert "1//refresh-di-test" not in serialized
+
+        tokens = google_oauth._stored_tokens()
+        assert tokens["access_token"] == "ya29-access-di-test"
+        assert tokens["refresh_token"] == "1//refresh-di-test"
+        assert google_oauth.status()["connesso"] is True
+
+    def test_token_legacy_in_chiaro_ancora_leggibili(self):
+        set_setting("google.tokens", {"access_token": "vecchio", "refresh_token": "r", "expires_at": 0})
+        assert google_oauth._stored_tokens()["access_token"] == "vecchio"
+
+    def test_blob_corrotto_non_esplode(self):
+        set_setting("google.tokens", {"enc": "non-un-token-fernet"})
+        assert google_oauth._stored_tokens() == {}
+        assert google_oauth.status()["connesso"] is False

@@ -27,6 +27,21 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e
 - CI: Node 22, iOS su `macos-latest` con la Xcode più recente e runtime del simulatore
   scelto in base all'SDK della Xcode installata.
 
+### Sicurezza
+
+- **Token OAuth Google cifrati a riposo** (AES/Fernet con chiave derivata dal
+  segreto del server): prima access e refresh token finivano in chiaro nel
+  database. I token già salvati restano leggibili e vengono riscritti cifrati
+  al primo rinnovo; se il segreto cambia serve ricollegare Google.
+
+### Aggiunto
+
+- **Sintesi vocale in chat** (`expo-speech`): ogni risposta di ATLAS ha
+  "🔊 Ascolta" / "⏹ Ferma", in italiano, con stop automatico lasciando la
+  schermata. Il markdown viene ripulito prima della lettura.
+- **`docs/ROADMAP.md`**: stato verificato di ogni area (fatto, parziale,
+  mancante) e i tre passi successivi.
+
 ### Cambiato
 
 - Workflow su action aggiornate (Node 24): `checkout@v7`, `setup-node@v7`,
