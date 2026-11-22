@@ -95,22 +95,36 @@ fi
 
 # Sui runner condivisi il primo caricamento del bundle JS può superare i 30s:
 # attende fino a ~100s, ma si ferma subito se il processo muore (crash reale).
-for _ in $(seq 1 20); do
-  if grep -Eq 'ATLAS AI|Chi sei|Inserisci PIN|PIN' atlas-window.xml 2>/dev/null; then
-    break
-  fi
-  PID="$(adb shell pidof "$PACKAGE" | tr -d '\r' || true)"
-  if [ -z "$PID" ]; then
-    echo "Processo ATLAS terminato durante l'attesa della UI"
-    break
-  fi
-  sleep 5
-  dump_ui
-done
-if ! grep -Eq 'ATLAS AI|Chi sei|Inserisci PIN|PIN' atlas-window.xml 2>/dev/null; then
+UI_RE='ATLAS AI|Chi sei|Inserisci PIN|PIN'
+ui_visible() { grep -Eq "$UI_RE" atlas-window.xml 2>/dev/null; }
+
+wait_for_ui() {
+  for _ in $(seq 1 20); do
+    ui_visible && return 0
+    PID="$(adb shell pidof "$PACKAGE" | tr -d '\r' || true)"
+    if [ -z "$PID" ]; then
+      return 1
+    fi
+    sleep 5
+    dump_ui
+  done
+  return 1
+}
+
+if ! wait_for_ui && [ -n "${PID:-}" ]; then
+  # Processo vivo ma UI non disegnata: rilancio una volta (emulatore lento o
+  # primo frame perso), poi si arrende con il logcat nell'annotazione.
+  echo "UI non rilevata (window.xml $(wc -c < atlas-window.xml 2>/dev/null || echo 0) byte): rilancio ATLAS una volta"
+  launch
+  wait_for_ui || true
+fi
+
+if ! ui_visible; then
+  SIZE=$(wc -c < atlas-window.xml 2>/dev/null || echo 0)
+  LOGTAIL=$(tail -60 android-logcat.txt 2>/dev/null | tr '\n' ' ' | cut -c1-1500)
   tail -120 android-logcat.txt || true
-  echo "::error::La UI ATLAS non è comparsa dopo il lancio"
   adb exec-out screencap -p > atlas-install.png || true
+  echo "::error::La UI ATLAS non è comparsa dopo il lancio (window.xml ${SIZE} byte, processo '${PID:-assente}'). LOGCAT: ${LOGTAIL:-nessun log}"
   exit 1
 fi
 
