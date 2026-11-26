@@ -9,6 +9,9 @@ Assistente AI **family-first** con backend Python/FastAPI + app mobile React Nat
 
 **Licenza MIT** · CI su GitHub Actions · oltre 200 test backend · TypeScript strict a 0 errori
 
+**Per agenti LLM:** [`AGENTS.md`](AGENTS.md) contiene comandi verificati, mappa del
+repository, trappole note e le regole di sicurezza che non devono regredire.
+
 [![CI](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ci.yml)
 [![E2E](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml)
 [![iOS Build](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ios-build.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ios-build.yml)
