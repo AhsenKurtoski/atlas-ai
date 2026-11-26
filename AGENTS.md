@@ -21,7 +21,8 @@ passa sempre dal backend.
 
 - Versione: `APP_VERSION` in `backend/main.py` (oggi 3.4.x)
 - Licenza: MIT
-- CI: `.github/workflows/ci.yml` (backend + frontend + sicurezza),
+- CI: `.github/workflows/ci.yml` (backend 3.11–3.13 + frontend + sicurezza),
+  `security.yml` (controllo riusabile, anche settimanale), `codeql.yml` (SAST),
   `e2e.yml` (Playwright sulla build web), `android-apk.yml`, `ios-build.yml`
 
 ## Regole non negoziabili
@@ -170,6 +171,11 @@ scripts/                         setup / verify / autostart (PowerShell)
 - **CI**: `pip-audit` sulle dipendenze Python, `npm audit --omit=dev
   --audit-level=high` sul frontend e **gitleaks** su tutta la storia. Un
   segreto committato resta nella storia anche se lo rimuovi dopo.
+- **Controlli periodici**: il job di sicurezza gira anche ogni **lunedì alle
+  06:00 UTC** (più `workflow_dispatch`), così una CVE pubblicata dopo l'ultimo
+  push emerge senza aspettare una modifica; CodeQL analizza Python e
+  TypeScript ogni lunedì alle 05:00 UTC. Se una run schedulata è rossa, la
+  causa va corretta: non si disattiva il cron.
 
 ## Cosa non fare
 

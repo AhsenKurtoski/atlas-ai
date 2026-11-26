@@ -1,0 +1,59 @@
+name: Sicurezza
+
+# Controllo unico riusato da due trigger diversi:
+# - `ci.yml` lo esegue a ogni push e pull request;
+# - `ci.yml` lo esegue anche con il cron settimanale, così una CVE pubblicata
+#   dopo l'ultimo push emerge senza aspettare attività sul repository.
+# `workflow_dispatch` permette di rieseguirlo a mano dalla scheda Actions
+# (utile dopo un avviso di sicurezza o per verificare la configurazione).
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Dipendenze e segreti
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # gitleaks legge tutta la storia: con il checkout shallow non vedrebbe
+          # un segreto committato mesi fa e rimosso dopo.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Installa pip-audit
+        run: pip install -q pip-audit
+
+      - name: Vulnerabilità delle dipendenze Python
+        # Legge requirements.txt senza installare il progetto: 0 vulnerabilità
+        # note oggi, quindi il controllo può bloccare la CI.
+        run: pip-audit -r backend/requirements.txt --progress-spinner off
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Vulnerabilità delle dipendenze frontend
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: gitleaks — nessun segreto nella storia
+        shell: bash
+        run: |
+          if ! command -v gitleaks >/dev/null 2>&1; then
+            version=8.24.3
+            curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
+              | tar -xz -C /usr/local/bin gitleaks
+          fi
+          gitleaks detect --source . --redact --no-banner --exit-code 1

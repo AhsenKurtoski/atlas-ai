@@ -16,6 +16,7 @@ repository, trappole note e le regole di sicurezza che non devono regredire.
 [![E2E](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/e2e.yml)
 [![iOS Build](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ios-build.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/ios-build.yml)
 [![Android APK](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/android-apk.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/android-apk.yml)
+[![CodeQL](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/codeql.yml/badge.svg)](https://github.com/AhsenKurtoski/atlas-ai/actions/workflows/codeql.yml)
 
 <p align="center">
   <a href="media/atlas-ai-demo.mp4"><img src="media/atlas-ai-poster.jpg" width="250" alt="Guarda il video demo di ATLAS AI"></a>
