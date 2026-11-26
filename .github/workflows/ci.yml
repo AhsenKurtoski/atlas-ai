@@ -4,14 +4,37 @@ on:
   push:
     branches: ["main", "master"]
   pull_request:
+  # Ogni lunedì alle 06:00 UTC. Serve a scoprire una CVE pubblicata dopo
+  # l'ultimo push: i backend e il frontend non vengono rieseguiti (sarebbero
+  # identici), gira solo il job di sicurezza.
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# Una nuova push sullo stesso branch/PR annulla la run precedente: inutile
+# tenere in coda una build già superata. Sul branch principale e sulle run
+# schedulate non si annulla nulla.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   backend:
-    name: Backend (pytest, Python 3.12)
+    name: Backend (pytest, Python ${{ matrix.python-version }})
+    # Con il cron settimanale gira solo `security`: le versioni di Python non
+    # cambiano da sole e rifare 3 build ogni lunedì sarebbe solo rumore.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Le versioni dichiarate in README/requirements sono 3.11–3.13: qui si
+        # verificano gli estremi, non solo la 3.12 usata in sviluppo.
+        python-version: ["3.11", "3.12", "3.13"]
     defaults:
       run:
         working-directory: backend
@@ -19,7 +42,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - name: Installa dipendenze
@@ -35,7 +58,9 @@ jobs:
 
   frontend:
     name: Frontend (TypeScript)
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: frontend
@@ -55,42 +80,6 @@ jobs:
 
   security:
     name: Sicurezza (dipendenze e segreti)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          # gitleaks legge tutta la storia: con il checkout shallow non vedrebbe
-          # un segreto committato mesi fa e rimosso dopo.
-          fetch-depth: 0
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - name: Installa pip-audit
-        run: pip install -q pip-audit
-
-      - name: Vulnerabilità delle dipendenze Python
-        # Legge requirements.txt senza installare il progetto: 0 vulnerabilità
-        # note oggi, quindi il controllo può bloccare la CI.
-        run: pip-audit -r backend/requirements.txt --progress-spinner off
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Vulnerabilità delle dipendenze frontend
-        working-directory: frontend
-        run: npm audit --omit=dev --audit-level=high
-
-      - name: gitleaks — nessun segreto nella storia
-        shell: bash
-        run: |
-          if ! command -v gitleaks >/dev/null 2>&1; then
-            version=8.24.3
-            curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
-              | tar -xz -C /usr/local/bin gitleaks
-          fi
-          gitleaks detect --source . --redact --no-banner --exit-code 1
+    # Sempre: è il job che deve restare verde anche quando non c'è nessun push
+    # (run schedulata) e che deve poter essere rilanciato a mano.
+    uses: ./.github/workflows/security.yml
